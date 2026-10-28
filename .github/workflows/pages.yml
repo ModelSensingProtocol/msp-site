@@ -1,9 +1,11 @@
 name: pages
 
-# 站点由三部分拼成：
-#   /            ← landing/（手写静态页，保留原设计）
-#   /docs/**     ← MkDocs Material 构建产物（搜索、TOC、代码复制、深浅色）
-# mike 还没接：接上之后文档的 URL 会变成 /docs/<协议修订号>/…，与 MCP 站同形。
+# 产物布局（与 modelcontextprotocol.io 同形）：
+#   /                      landing/（手写静态页）
+#   /docs/2026-10-10/…     mike 构建的该版本
+#   /docs/latest/…         latest 别名，指向同一版本
+#
+# 版本号 = 协议修订号，与主仓库 schema/2026-10-10/ 一致。新增修订时改 DOCS_VERSION。
 on:
   push:
     branches: [main]
@@ -24,6 +26,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      DOCS_VERSION: "2026-10-10"
     steps:
       - uses: actions/checkout@v4
 
@@ -31,17 +35,27 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install MkDocs Material
-        run: pip install mkdocs-material
+      - name: Install mkdocs + mike
+        run: pip install mkdocs-material mike
 
-      - name: Build docs
-        run: mkdocs build --strict
+      - name: Configure git (mike commits to gh-pages)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Assemble (landing at /, docs under /docs)
+      - name: Build & version docs
+        run: |
+          # --deploy-prefix docs：版本目录挂在 /docs/ 下，landing 留在根
+          mike deploy --deploy-prefix docs --update-aliases "$DOCS_VERSION" latest
+          mike list
+
+      - name: Assemble site
         run: |
           mkdir -p _out
+          # 取 mike 提交后的整棵树（含 docs/<version>/、versions.json、.nojekyll）
+          git archive gh-pages | tar -x -C _out
+          # landing 覆盖根目录的入口
           cp -r landing/. _out/
-          cp -r _docs _out/docs
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -57,6 +57,14 @@ jobs:
           git archive gh-pages | tar -x -C _out
           # landing 覆盖根目录的入口
           cp -r landing/. _out/
+          # 兜底：/docs/ 没有 index（版本目录在 /docs/<revision>/ 下），跳到 latest
+          cat > _out/docs/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>MSP documentation</title>
+          <meta http-equiv="refresh" content="0; url=latest/">
+          <link rel="canonical" href="latest/">
+          <p>Redirecting to the <a href="latest/">latest documentation</a>…</p>
+          HTML
 
       - uses: actions/upload-pages-artifact@v3
         with:

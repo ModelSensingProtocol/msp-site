@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Sensing Protocol — every local app is a neighbour</title>
+<meta name="description" content="MSP is an open protocol where local software becomes a neighbour, not a socket: leases for presence, push for change, and nodes that serve each other directly.">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%233d6cf0'/%3E%3Ccircle cx='8' cy='2.2' r='1.2' fill='%232f9e6b'/%3E%3Ccircle cx='13' cy='11' r='1.2' fill='%232f9e6b'/%3E%3Ccircle cx='3' cy='11' r='1.2' fill='%232f9e6b'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#top">
+    <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.4" fill="currentColor"/>
+      <circle cx="8" cy="2.2" r="1.2" fill="#2f9e6b"/>
+      <circle cx="13.2" cy="11" r="1.2" fill="#2f9e6b"/>
+      <circle cx="2.8" cy="11" r="1.2" fill="#7c869c"/>
+      <path d="M8 5.6V4M9.4 9.2l2.2 1.1M6.6 9.2 4.4 10.3" stroke="currentColor" stroke-width=".9" fill="none"/>
+    </svg>
+    <span>MSP</span>
+  </a>
+  <nav>
+    <a href="#what">What is MSP</a>
+    <a href="#enables">Capabilities</a>
+    <a href="#start">Start building</a>
+    <a href="#ecosystem">Implementations</a>
+    <a href="https://github.com/hxh230802/MSP/tree/master/docs/wiki" target="_blank" rel="noreferrer">Docs</a>
+    <a class="gh" href="https://github.com/hxh230802/MSP" target="_blank" rel="noreferrer">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <p class="eyebrow">Open protocol · MIT · alpha</p>
+    <h1>Model Sensing Protocol</h1>
+    <p class="lead">
+      Local software should be a <strong>neighbour</strong>, not a socket.
+      MSP gives every process a lease so its presence is a fact you can read,
+      a way to speak up when something changes, and the ability to serve its
+      peers directly instead of routing every step through a model.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#start">Start building</a>
+      <a class="btn" href="https://github.com/hxh230802/MSP/tree/master/docs/wiki" target="_blank" rel="noreferrer">Read the docs</a>
+      <a class="btn ghost" href="https://pypi.org/project/msp-py/" target="_blank" rel="noreferrer">pip install --pre msp-py</a>
+    </div>
+    <div class="mesh" aria-hidden="true">
+      <svg viewBox="0 0 640 200">
+        <g stroke="#3d6cf0" stroke-opacity=".28" stroke-width="1.2">
+          <line x1="320" y1="100" x2="150" y2="46"/>
+          <line x1="320" y1="100" x2="150" y2="154"/>
+          <line x1="320" y1="100" x2="490" y2="46"/>
+          <line x1="320" y1="100" x2="490" y2="154"/>
+        </g>
+        <g stroke="#2f9e6b" stroke-opacity=".5" stroke-width="1.2">
+          <line x1="150" y1="46" x2="150" y2="154"/>
+          <line x1="150" y1="46" x2="490" y2="46"/>
+          <line x1="490" y1="46" x2="490" y2="154"/>
+          <line x1="150" y1="154" x2="490" y2="154"/>
+        </g>
+        <line x1="320" y1="100" x2="580" y2="100" stroke="#7c869c" stroke-dasharray="5 5" stroke-width="1.2"/>
+        <circle cx="320" cy="100" r="15" fill="#3d6cf0"/>
+        <text x="320" y="105" text-anchor="middle" font-size="11" fill="#fff">AI</text>
+        <g fill="#2f9e6b">
+          <circle cx="150" cy="46" r="10"/><circle cx="150" cy="154" r="10"/>
+          <circle cx="490" cy="46" r="10"/><circle cx="490" cy="154" r="10"/>
+        </g>
+        <circle cx="580" cy="100" r="10" fill="none" stroke="#7c869c" stroke-dasharray="3 3"/>
+        <g font-size="10.5" fill="currentColor" fill-opacity=".65" text-anchor="middle">
+          <text x="320" y="132">dsh-msp</text>
+          <text x="150" y="30">downloader</text>
+          <text x="150" y="180">editor</text>
+          <text x="490" y="30">player</text>
+          <text x="490" y="180">device</text>
+          <text x="580" y="86">offline</text>
+        </g>
+      </svg>
+      <p class="legend">
+        solid blue = our own connection · green = reported by a peer ·
+        dashed = inferred · hollow = known, not connected
+      </p>
+    </div>
+  </section>
+
+  <section id="what" class="block">
+    <h2>What is MSP?</h2>
+    <p>
+      MSP is a small wire protocol (8 fixed top-level fields, 4-byte length framing) that lets
+      processes on a machine — or across a LAN — discover each other, call each other's tools, and
+      broadcast events. A node announces itself with a <em>lease</em>; a crashed node simply
+      disappears when the lease goes stale. There is no central broker and no configuration file to
+      maintain: presence is observed, not declared.
+    </p>
+    <div class="grid three">
+      <div class="card">
+        <h3>Presence, not config</h3>
+        <p>A node writes a declaration and renews it. Anything not renewed within 30 s is
+        ignored, so "what is running right now" is a fact you can read at any moment.</p>
+      </div>
+      <div class="card">
+        <h3>Push, not poll</h3>
+        <p>Events happen inside the app, not inside the model's question. Nodes broadcast on a
+        path; subscribers are woken instead of polling for changes.</p>
+      </div>
+      <div class="card">
+        <h3>Peers, not a hub</h3>
+        <p>Nodes can serve each other directly. The agent is one participant in the mesh, not the
+        switchboard every message has to cross.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="enables" class="block">
+    <h2>What can it enable?</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Long tasks that finish themselves</h3>
+        <p>Start a download, wait on a completion signal with polling as a fallback, and get
+        called back when it lands — the call blocks briefly, then becomes a card you can walk
+        away from.</p>
+      </div>
+      <div class="card">
+        <h3>Apps that know each other exist</h3>
+        <p>A downloader hands a finished file to an editor without the model relaying the
+        handoff, because both are nodes in the same mesh.</p>
+      </div>
+      <div class="card">
+        <h3>Devices on the same footing</h3>
+        <p>An ESP32 with six tools and a desktop app are the same kind of thing: a node with a
+        manifest.</p>
+      </div>
+      <div class="card">
+        <h3>Attention routing</h3>
+        <p>When something needs a human — approval, a question, a finished job — the network can
+        say so, and the agent decides whether to notify or stay quiet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="start" class="block">
+    <h2>Start building</h2>
+    <div class="grid two">
+      <div class="card code">
+        <h3>Run a node that offers a tool</h3>
+<pre><code>from msp import MSPNode, Preset
+
+node = MSPNode("weather", preset=Preset.LOCAL_TOOL)
+
+@node.tool("get_weather", "Look up the weather")
+def get_weather(location: str, days: int = 3) -&gt; dict:
+    return {"location": location, "days": days, "temp_c": 21}
+
+node.start()</code></pre>
+      </div>
+      <div class="card code">
+        <h3>Discover it and call it</h3>
+<pre><code>peer = MSPNode("agent", preset=Preset.FULL_PEER)
+peer.start()
+
+print(peer.neighbors())        # ['weather']
+result = peer.call("weather", "get_weather",
+                   {"location": "Hangzhou"})
+print(result.unwrap())</code></pre>
+      </div>
+    </div>
+    <p class="muted">
+      Install: <code>pip install --pre msp-py</code> · the same protocol is implemented in
+      TypeScript, C++ and .NET.
+    </p>
+  </section>
+
+  <section id="ecosystem" class="block">
+    <h2>Implementations</h2>
+    <div class="grid three">
+      <a class="card link" href="https://pypi.org/project/msp-py/" target="_blank" rel="noreferrer">
+        <h3>Python · reference</h3>
+        <p><code>msp-py</code> on PyPI, 0.1.0a1. The semantics every other implementation is
+        measured against.</p>
+      </a>
+      <a class="card link" href="https://github.com/ModelSensingProtocol/msp-ts" target="_blank" rel="noreferrer">
+        <h3>TypeScript</h3>
+        <p>Zero dependencies, Node ≥ 22.6, byte-level interop with <code>msp-py</code>.</p>
+      </a>
+      <a class="card link" href="https://github.com/hxh230802/dsh-msp" target="_blank" rel="noreferrer">
+        <h3>DeepSeek Harness</h3>
+        <p>Every MSP node's tools become agent tools, long tasks and notifications included.</p>
+      </a>
+    </div>
+    <p class="muted">C++ and .NET live in the same organisation; both are private for now.</p>
+  </section>
+
+  <section class="block">
+    <h2>MSP is not MCP</h2>
+    <table>
+      <thead><tr><th></th><th>MCP</th><th>MSP</th></tr></thead>
+      <tbody>
+        <tr><td>Topology</td><td>hub-and-spoke: the model is the centre</td><td>mesh: nodes are peers</td></tr>
+        <tr><td>Direction</td><td>pull</td><td>pull and push</td></tr>
+        <tr><td>Presence</td><td>an entry in a config file</td><td>a lease you can read</td></tr>
+        <tr><td>Lifetime</td><td>one call, one session</td><td>long-lived, with heartbeat</td></tr>
+        <tr><td>App to app</td><td>through the model</td><td>directly</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">
+      <a href="https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.md" target="_blank" rel="noreferrer">The long version</a>
+      explains the trade-off, including what choosing MSP costs us.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  <div>
+    <strong>MSP</strong> · MIT · alpha
+  </div>
+  <nav>
+    <a href="https://github.com/hxh230802/MSP" target="_blank" rel="noreferrer">Source</a>
+    <a href="https://github.com/hxh230802/MSP/tree/master/docs/wiki" target="_blank" rel="noreferrer">Wiki</a>
+    <a href="https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md" target="_blank" rel="noreferrer">Spec</a>
+    <a href="https://pypi.org/project/msp-py/" target="_blank" rel="noreferrer">PyPI</a>
+  </nav>
+</footer>
+
+</body>
+</html>

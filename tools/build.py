@@ -24,6 +24,7 @@ PAGES = [
     ("Learn", "architecture", "Architecture & concepts", "02-concepts.md"),
     ("Develop", "provide-tools", "Provide tools and signals", "03-provide.md"),
     ("Develop", "consume", "Discover, call, subscribe", "04-consume.md"),
+    ("Learn", "why-not-mcp", "Why MSP, not MCP", "07-positioning.md"),
     ("Reference", "faq", "FAQ & troubleshooting", "05-faq.md"),
     ("Reference", "glossary", "Glossary", "06-glossary.md"),
 ]
@@ -40,6 +41,7 @@ WIKI_MAP = {
     "04-consume.md": "consume.html",
     "05-faq.md": "faq.html",
     "06-glossary.md": "glossary.html",
+    "07-positioning.md": "why-not-mcp.html",
 }
 
 

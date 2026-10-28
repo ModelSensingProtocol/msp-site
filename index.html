@@ -167,6 +167,21 @@ result = peer.call("weather", "get_weather",
 print(result.unwrap())</code></pre>
       </div>
     </div>
+    <div class="card code" style="margin-top:14px">
+        <h3>Publish a signal — and receive it elsewhere</h3>
+<pre><code># provider: declare once, publish whenever something changes
+node.declare_signal("weather.updated")
+node.publish("weather.updated", {"location": "Hangzhou", "temp_c": 21})
+
+# consumer: subscribe with a path pattern (* = one segment, ** = many)
+@peer.on("weather.*")
+def on_weather(sig):
+    print(sig.path, sig.payload)   # weather.updated {'location': ...}</code></pre>
+      <p class="muted" style="margin-top:10px">
+        Signals are fire-and-forget: nothing is retained and a subscriber that was offline missed
+        it. Treat a signal as <em>"something changed"</em> and fetch the state with a tool.
+      </p>
+    </div>
     <p class="muted">
       Install: <code>pip install --pre msp-py</code> · the same protocol is implemented in
       TypeScript, C++ and .NET.

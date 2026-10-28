@@ -69,6 +69,6 @@ print("结果:", result.unwrap() if not result.is_error else result.error)
 
 ## 5. 下一步
 
-- 想暴露更多接口、想主动推送 → [提供能力(https://github.com/hxh230802/MSP/blob/master/docs/03-provide.md)
-- 想看调用失败怎么办、怎么订阅广播 → [使用能力(https://github.com/hxh230802/MSP/blob/master/docs/04-consume.md)
+- 想暴露更多接口、想主动推送 → [提供能力](provide-tools.md)
+- 想看调用失败怎么办、怎么订阅广播 → [使用能力](consume.md)
 - 想一次跑完整个例子（不需要开两个终端）→ `PYTHONPATH=src python docs/wiki/examples/two_nodes.py`

@@ -24,6 +24,19 @@ Rebuild after editing `content/`:
 python tools/build.py
 ```
 
+## Languages
+
+Two document languages, Chinese first (the source of truth) and English under `/en/`:
+
+```
+docs/index.md       中文      docs/index.en.md     English
+docs/intro.md       中文      docs/intro.en.md     English
+```
+
+Untranslated pages fall back to Chinese, and `/en/` says so in a note. The switcher is provided by
+`mkdocs-static-i18n`; `navigation.instant` has to stay off because the contextual language link is
+not compatible with it.
+
 ## Layout
 
 ```

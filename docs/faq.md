@@ -6,7 +6,7 @@
 
 不是替代关系，是形状不同：MCP 是 hub-and-spoke 的工具协议，MSP 是网状的对等协议——节点有租约
 （存在感）、能主动广播（推送）、能互相直接服务。为什么这决定了本地软件该用哪个，见
-[`docs/POSITIONING.zh-CN.md`(https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md)。
+[`docs/POSITIONING.zh-CN.md`](https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md)。
 
 仓库里的 `mcp/` 是**互操作适配层**：把 MCP server 包成 MSP 节点，而不是让运行时同时说两种协议。
 

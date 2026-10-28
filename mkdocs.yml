@@ -9,7 +9,6 @@ theme:
   language: en
   font: false            # 不拉 Google Fonts：用系统 Inter 回退，离线也正常
   features:
-    - navigation.instant
     - navigation.tracking
     - navigation.top
     - content.code.copy        # 代码块复制按钮
@@ -34,17 +33,39 @@ theme:
         name: Switch to light
 
 nav:
-  - Home: index.md
-  - Introduction: intro.md
-  - Architecture & concepts: architecture.md
-  - Why MSP, not MCP: why-not-mcp.md
-  - Provide tools and signals: provide-tools.md
-  - Discover, call, subscribe: consume.md
-  - FAQ & troubleshooting: faq.md
-  - Glossary: glossary.md
+  - 文档首页: index.md
+  - 快速开始: intro.md
+  - 架构与概念: architecture.md
+  - 与 MCP 的区别: why-not-mcp.md
+  - 提供能力: provide-tools.md
+  - 发现、调用与订阅: consume.md
+  - FAQ 与排查: faq.md
+  - 术语表: glossary.md
 
 plugins:
   - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: zh
+          default: true
+          name: 中文
+          build: true
+        - locale: en
+          name: English
+          build: true
+          nav_translations:
+            文档首页: Home
+            快速开始: Introduction
+            架构与概念: Architecture & concepts
+            与 MCP 的区别: Why MSP, not MCP
+            提供能力: Provide tools and signals
+            发现、调用与订阅: Discover, call, subscribe
+            FAQ 与排查: FAQ & troubleshooting
+            术语表: Glossary
 
 markdown_extensions:
   - admonition

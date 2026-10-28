@@ -7,6 +7,7 @@ site_dir: _docs
 theme:
   name: material
   language: en
+  font: false            # 不拉 Google Fonts：用系统 Inter 回退，离线也正常
   features:
     - navigation.instant
     - navigation.tracking
@@ -19,14 +20,14 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
+      primary: white
       accent: indigo
       toggle:
         icon: material/weather-sunny
         name: Switch to dark
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: black
       accent: indigo
       toggle:
         icon: material/weather-night
@@ -60,3 +61,6 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.smartsymbols
+
+extra_css:
+  - stylesheets/extra.css

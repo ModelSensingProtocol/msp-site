@@ -24,11 +24,26 @@ Rebuild after editing `content/`:
 python tools/build.py
 ```
 
+## Layout
+
+```
+landing/            the hand-written landing page (served at /)
+docs/               Markdown sources for the docs section
+mkdocs.yml          MkDocs Material config (search, TOC, code copy, dark mode)
+_docs/              build output (git-ignored)
+```
+
+The docs are built with **MkDocs Material** rather than a hand-rolled generator, because search,
+on-page TOC and a version switcher are the parts a reader notices and a static generator does not
+give you for free. `mike` is the next step — it publishes `/docs/<protocol-revision>/…`, matching
+how `modelcontextprotocol.io` versions its docs.
+
 ## Preview
 
 ```bash
-python -m http.server 8899
-# → http://127.0.0.1:8899/
+pip install mkdocs-material
+mkdocs serve                 # docs at http://127.0.0.1:8000/
+python -m http.server 8899   # landing at http://127.0.0.1:8899/landing/
 ```
 
 ## Deploy

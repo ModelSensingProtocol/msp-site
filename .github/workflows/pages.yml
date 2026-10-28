@@ -1,6 +1,9 @@
 name: pages
 
-# site 就是仓库根：Settings → Pages → Source 选 "GitHub Actions"
+# 站点由三部分拼成：
+#   /            ← landing/（手写静态页，保留原设计）
+#   /docs/**     ← MkDocs Material 构建产物（搜索、TOC、代码复制、深浅色）
+# mike 还没接：接上之后文档的 URL 会变成 /docs/<协议修订号>/…，与 MCP 站同形。
 on:
   push:
     branches: [main]
@@ -23,8 +26,26 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install MkDocs Material
+        run: pip install mkdocs-material
+
+      - name: Build docs
+        run: mkdocs build --strict
+
+      - name: Assemble (landing at /, docs under /docs)
+        run: |
+          mkdir -p _out
+          cp -r landing/. _out/
+          cp -r _docs _out/docs
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _out
+
       - id: deployment
         uses: actions/deploy-pages@v4

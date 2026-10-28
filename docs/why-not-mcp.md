@@ -3,7 +3,7 @@
 > This document answers one question: for local software talking to AI, why MSP rather than MCP?
 > It is not a "protocol war" argument — it is about **shape**.
 
-中文版（含原文表述）：[`POSITIONING.zh-CN.md`](POSITIONING.zh-CN.md)
+中文版（含原文表述）：[`POSITIONING.zh-CN.md`(https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md)
 
 ## MCP and MSP are not the same kind of thing
 

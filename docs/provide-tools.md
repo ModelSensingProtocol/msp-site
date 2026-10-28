@@ -37,7 +37,7 @@ node.tool("raw", "手工描述", input_schema={"type": "object", "properties": {
 ### 返回值怎么变成结果
 
 工具函数返回的 dict 进 `ToolResult.structured`。想返回富内容（文本/图片块）就返回 MCP 风格的内容块，
-见 [`src/msp/mcp/`](../../src/msp/mcp/)。
+见 [`src/msp/mcp/`(https://github.com/hxh230802/MSP/tree/master/src/msp/mcp/)。
 
 ## 发布信号
 
@@ -84,8 +84,8 @@ with node.defer_manifest():
 ## 长任务：任务模式
 
 `get_task` / `list_tasks` 这种"有队列、要回查"的能力，用 `msp/task` 模式比裸工具更省事——
-调用方拿到的是一份可回查的任务快照。见 [`src/msp/patterns/task.py`](../../src/msp/patterns/task.py)
-与 [`docs/DESIGN.md`](../DESIGN.md) 里"任务"一节。
+调用方拿到的是一份可回查的任务快照。见 [`src/msp/patterns/task.py`(https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py)
+与 [`docs/DESIGN.md`(https://github.com/hxh230802/MSP/blob/master/docs/DESIGN.md) 里"任务"一节。
 
 ## 检查自己宣告了什么
 

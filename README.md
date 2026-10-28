@@ -6,6 +6,24 @@ dependency-free static site.
 Two files do all the work: `index.html` and `style.css`. No build step, no CDN, no framework;
 it follows the system light/dark preference and opens correctly from `file://`.
 
+## Documentation
+
+`/docs/<revision>/` is versioned by **protocol revision** — the same identifier the schema carries
+(`2026-10-10` today), mirroring how `modelcontextprotocol.io` prefixes its docs with the spec date.
+
+```
+content/*.md          ← mirror of docs/wiki/ in the main repository (the source of truth)
+tools/build.py        ← Markdown subset → HTML, one page per topic
+tools/sync-content.sh ← copy content/ from the main repository, then rebuild
+docs/2026-10-10/*.html← generated, committed (the site stays build-free)
+```
+
+Rebuild after editing `content/`:
+
+```bash
+python tools/build.py
+```
+
 ## Preview
 
 ```bash

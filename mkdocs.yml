@@ -33,6 +33,7 @@ theme:
         name: Switch to light
 
 nav:
+  - Home: index.md
   - Introduction: intro.md
   - Architecture & concepts: architecture.md
   - Why MSP, not MCP: why-not-mcp.md

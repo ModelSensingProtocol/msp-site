@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/architecture/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/consume/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/faq/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/glossary/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/intro/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/provide-tools/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://modelsensingprotocol.github.io/msp-site/docs/why-not-mcp/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+</urlset>

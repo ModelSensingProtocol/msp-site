@@ -7,6 +7,14 @@
   3. 顶栏右侧的 Ctrl K 提示（搜索框样式由 extra.css 处理）
 #}
 
+{% block extrahead %}
+  <link rel="icon" href="{{ "assets/favicon.ico" | url }}" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ "assets/favicon-32.png" | url }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ "assets/favicon-16.png" | url }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ "assets/favicon-180.png" | url }}">
+  <meta name="theme-color" content="#1c1917">
+{% endblock %}
+
 {% block content %}
   <div class="msp-titlebar">
     <div class="msp-titlebar__main">

@@ -37,6 +37,20 @@ Untranslated pages fall back to Chinese, and `/en/` says so in a note. The switc
 `mkdocs-static-i18n`; `navigation.instant` has to stay off because the contextual language link is
 not compatible with it.
 
+## Favicon
+
+`assets/favicon-*.png` and `assets/favicon.ico` are generated, not hand-drawn:
+
+```bash
+pip install pillow
+python tools/make_favicon.py
+```
+
+The mark is the same one used in the docs header and the landing diagram: a dark rounded
+square, a paper-white centre node, two green neighbours, one grey (offline) node.
+SVG was tried first and dropped — at 16 px the rounded corners and thin edges got clipped
+in some browsers, so the sizes are rendered separately instead.
+
 ## Layout
 
 ```

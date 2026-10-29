@@ -6,6 +6,7 @@ site_dir: _docs
 
 theme:
   name: material
+  favicon: assets/favicon-32.png
   custom_dir: overrides
   language: en
   font: false            # 不拉 Google Fonts：用系统 Inter 回退，离线也正常

@@ -53,7 +53,8 @@ def draw(size: int) -> Image.Image:
     d = ImageDraw.Draw(img)
 
     pad = s * 0.055
-    d.rounded_rectangle([pad, pad, s - pad, s - pad], radius=s * 0.22, fill=INK)
+    # 直角方块：不要圆角
+    d.rectangle([pad, pad, s - pad, s - pad], fill=INK)
 
     cx = cy = s / 2
     centre = (cx, cy)

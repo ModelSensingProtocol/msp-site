@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_DOCS = ROOT / "docs" / "assets"
+OUT_DOCS = ROOT / "docs-site" / "static"
 OUT_LANDING = ROOT / "landing" / "assets"
 
 INK = (28, 25, 23, 255)        # #1c1917 深底

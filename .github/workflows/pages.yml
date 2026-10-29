@@ -1,11 +1,10 @@
 name: pages
 
-# 产物布局（与 modelcontextprotocol.io 同形）：
-#   /                      landing/（手写静态页）
-#   /docs/2026-10-10/…     mike 构建的该版本
-#   /docs/latest/…         latest 别名，指向同一版本
-#
-# 版本号 = 协议修订号，与主仓库 schema/2026-10-10/ 一致。新增修订时改 DOCS_VERSION。
+# 产物布局：
+#   /                  landing/（手写静态页，中英两版）
+#   /docs/             Docusaurus 构建的文档站（默认展示 2026-10-10）
+#   /docs/next/        未发布的下一版
+#   /docs/spec|impl|design/  另外三个 docs 实例
 on:
   push:
     branches: [main]
@@ -26,45 +25,29 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      DOCS_VERSION: "2026-10-10"
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
 
-      - name: Install mkdocs + plugins
-        # mkdocs-static-i18n 是配置里 i18n 插件所需的依赖，漏了会直接 Abort
-        run: pip install mkdocs-material mike mkdocs-static-i18n
+      - name: Install docs dependencies
+        working-directory: docs-site
+        run: npm ci --no-audit --no-fund
 
-      - name: Configure git (mike commits to gh-pages)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Build & version docs
-        run: |
-          # --deploy-prefix docs：版本目录挂在 /docs/ 下，landing 留在根
-          mike deploy --deploy-prefix docs --update-aliases "$DOCS_VERSION" latest
-          mike list
+      - name: Build docs
+        working-directory: docs-site
+        run: npm run build
 
       - name: Assemble site
         run: |
           mkdir -p _out
-          # 取 mike 提交后的整棵树（含 docs/<version>/、versions.json、.nojekyll）
-          git archive gh-pages | tar -x -C _out
-          # landing 覆盖根目录的入口
           cp -r landing/. _out/
-          # 兜底：/docs/ 没有 index（版本目录在 /docs/<revision>/ 下），跳到 latest
-          cat > _out/docs/index.html <<'HTML'
-          <!doctype html><meta charset="utf-8">
-          <title>MSP documentation</title>
-          <meta http-equiv="refresh" content="0; url=latest/">
-          <link rel="canonical" href="latest/">
-          <p>Redirecting to the <a href="latest/">latest documentation</a>…</p>
-          HTML
+          mkdir -p _out/docs
+          cp -r docs-site/build/. _out/docs/
 
       - uses: actions/upload-pages-artifact@v3
         with:

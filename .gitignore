@@ -1,5 +1,12 @@
-_docs/
+# Docusaurus
+docs-site/node_modules/
+docs-site/build/
+docs-site/.docusaurus/
+
+# 组装与本地构建产物
 _out/
-site/
+_assembled/
+
+# Python（favicon 生成脚本用）
 __pycache__/
 *.pyc

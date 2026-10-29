@@ -1,0 +1,17 @@
+{
+  "name": "msp-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "docusaurus build",
+    "start": "docusaurus start",
+    "serve": "docusaurus serve",
+    "version": "docusaurus docs:version"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.7.0",
+    "@docusaurus/preset-classic": "^3.7.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

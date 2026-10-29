@@ -77,7 +77,9 @@ module.exports = {
     colorMode: { defaultMode: "light", disableSwitch: false, respectPrefersColorScheme: false },
     navbar: {
       title: "MSP",
-      logo: { alt: "MSP", src: "favicon.png" },
+      // 点 logo 回 landing。必须用绝对地址：Docusaurus 会给 "/…" 自动加 baseUrl，
+      // 写成 "/msp-site/" 会被拼成 /msp-site/docs/msp-site/。
+      logo: { alt: "MSP", src: "favicon.png", href: "https://modelsensingprotocol.github.io/msp-site/" },
       items: [
         { type: "docSidebar", sidebarId: "main", label: "Docs", position: "left" },
         { type: "docSidebar", docsPluginId: "spec", sidebarId: "main", label: "Specification", position: "left" },
@@ -86,12 +88,21 @@ module.exports = {
         { type: "docSidebar", docsPluginId: "case", sidebarId: "main", label: "Case studies", position: "left" },
         { type: "docsVersionDropdown", position: "right" },
         { type: "localeDropdown", position: "right" },
+        { href: "https://modelsensingprotocol.github.io/msp-site/", label: "Homepage", position: "right" },
         { href: "https://github.com/ModelSensingProtocol/msp-site", label: "GitHub", position: "right" },
       ],
     },
     footer: {
       style: "light",
-      links: [],
+      links: [
+        {
+          title: "MSP",
+          items: [
+            // 绝对地址：本地 npm start 时 landing 不在同源下，相对地址会 404
+            { label: "Homepage", href: "https://modelsensingprotocol.github.io/msp-site/" },
+          ],
+        },
+      ],
       copyright: `Copyright © MSP — Model Sensing Protocol. MIT licensed. This site is documentation, not the specification; the normative text lives in the repository.`,
     },
     prism: {

@@ -15,7 +15,7 @@
 | **订阅** | subscription | 用路径模式（`*` / `**`）注册本地回调 | [`protocol/matcher.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/matcher.py) |
 | **发现** | discovery | 扫描共享目录，把新节点变成可拨的对端 | [`discovery/`](https://github.com/hxh230802/MSP/tree/master/src/msp/discovery/) |
 | **宣告** | presence | 往共享目录写自己的声明文件并续租 | [`presence/`](https://github.com/hxh230802/MSP/tree/master/src/msp/presence/) |
-| **租约** | lease | 声明的有效期：30 秒没有续租即视为失联 | 同上 |
+| **租约** | lease | 每 10 秒续租，30 秒未续即失效；发现侧上界 60 秒 | 同上 |
 | **预置** | preset | 一组能力的打包：发现、宣告、传输、模式、连接策略 | [`core/preset.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/preset.py) |
 | **连接策略** | connect policy | `eager`（发现即连）/ `lazy`（用到才连） | 同上 |
 | **稳定** | settle | 等"这次启动触发的建连"落地，只等不发起 | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |

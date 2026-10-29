@@ -35,7 +35,7 @@ Windows 没有 `AF_UNIX`，`tests/test_uds.py` 的 4 个 UDS 用例会自动 ski
 
 | 症状 | 先查什么 | 常见原因 |
 |---|---|---|
-| `neighbors()` 是空的 | 两边 `nodes_dir` 是否同一个目录；目录里有没有对方的 `<id>.json` | 目录不同；id 含非法字符（大写/点号）；声明超过 30 秒没续租 |
+| `neighbors()` 是空的 | 两边 `nodes_dir` 是否同一个目录；目录里有没有对方的 `<id>.json` | 目录不同；id 含非法字符（大写/点号）；声明超过 30 秒没续租（发现侧最坏 60 秒才反应过来） |
 | 邻居有，`connections()` 没有 | 对方端口是否可达；防火墙 | 端口被拦；对方已退出但声明还没过期 |
 | `call()` 报"未连接/未知节点" | `ensure_connected(peer_id)` 的异常信息 | 名字打错；对方没宣告这个工具 |
 | `call()` 超时 | 对方的 `metrics_line()` 里 `dispatched` 有没有涨 | 工具函数卡住（同步阻塞操作）；`timeout` 设太短 |

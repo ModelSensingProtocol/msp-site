@@ -63,9 +63,20 @@ Both write a "I am here" declaration into the same directory and poll that direc
 ~/.msp/nodes/agent.json
 ```
 
-- A node writes its endpoint (host/port) on start and renews the lease every 5–10 s
-- Other nodes scan the directory and dial anything new
-- **A declaration not renewed within 30 s is ignored** — a crashed process needs no cleanup
+`timestamp` is a **lease**, not metadata:
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| renew interval | **10 s** | the announcer rewrites `timestamp` every 10 s |
+| stale threshold | **30 s** | `now - timestamp > 30s` means expired, i.e. "node is dead" |
+| poll fallback | **30 s** | full directory scan when the event channel misses something |
+
+So **a crashed node takes at most 60 s to disappear**: up to 30 s before it is judged stale,
+plus at most one more 30 s poll cycle.
+
+Discovery has two legs: a **filesystem event channel** (realtime) and a **30 s poll fallback**
+for when events are missed. Discovery and announcement are **orthogonal layers** — scan without
+announcing (observe only), or announce without scanning (be listed without dialling out).
 
 Pass `nodes_dir=` to use another directory. Two nodes using different directories simply cannot
 see each other.

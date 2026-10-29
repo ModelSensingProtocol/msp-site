@@ -1,0 +1,10 @@
+{
+  "version.label": {
+    "message": "Next",
+    "description": "The label for version current"
+  },
+  "sidebar.main.category.模式细则": {
+    "message": "Pattern details",
+    "description": "The label for category '模式细则' in sidebar 'main'"
+  }
+}

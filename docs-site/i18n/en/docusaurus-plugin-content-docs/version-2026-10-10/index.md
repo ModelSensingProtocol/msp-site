@@ -7,10 +7,6 @@ running right now" is something you read rather than something you configure.
 This is the working guide. The normative text lives in the specification; the reasoning behind the
 design lives in the positioning document.
 
-> **Translation status.** This page and *Introduction* are available in English. The other pages
-> still show the Chinese original — they are listed here because they are accurate, not because
-> they are translated yet. Use the language switcher in the header to go back to 中文.
-
 ## Start here
 
 | Page | What it answers |

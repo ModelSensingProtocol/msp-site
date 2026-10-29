@@ -2,5 +2,9 @@
   "version.label": {
     "message": "2026-10-10",
     "description": "The label for version 2026-10-10"
+  },
+  "sidebar.main.category.示例": {
+    "message": "Examples",
+    "description": "The label for category '示例' in sidebar 'main'"
   }
 }

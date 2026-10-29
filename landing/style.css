@@ -459,3 +459,14 @@ body.docs { }
   .site-footer { flex-direction: column; align-items: center; text-align: center; }
   .brand em { display: none; }
 }
+
+/* 语言切换：安静的文本链接，和 GitHub 按钮区分开 */
+.nav .lang {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.nav .lang:hover { color: var(--text); text-decoration: none; border-color: var(--accent); }

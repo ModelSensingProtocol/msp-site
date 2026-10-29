@@ -439,3 +439,57 @@ body {
 /* 去掉 Material 在 .highlight 上可能叠加的内边距，避免代码块顶部发空 */
 .md-typeset .highlight { padding: 0; }
 .md-typeset .highlight > pre > code { display: block; }
+
+/* ── 版面宽度与字号：Material 默认 61rem 在宽屏上中间太窄 ────────── */
+.md-grid {
+  max-width: 90rem;          /* 61rem → 90rem，宽屏不再留两条大空白 */
+}
+
+.md-typeset {
+  font-size: 0.86rem;        /* 0.79 → 0.86，正文明显一点 */
+  line-height: 1.72;
+}
+
+.md-sidebar {
+  width: 13.5rem;            /* 侧栏略宽，标题不折行 */
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary { padding-right: 0.6rem; }
+  .md-content { max-width: 54rem; }   /* 正文列自己能撑开 */
+}
+
+/* ── 上一页/下一页：我把页脚改成浅底后，文字仍是白色 → 看不见 ────── */
+.md-footer {
+  background-color: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+}
+
+.md-footer__link {
+  color: var(--md-default-fg-color);
+  opacity: 1;
+}
+
+.md-footer__link:hover {
+  background-color: var(--md-primary-fg-color--light);
+}
+
+.md-footer__title { color: var(--md-default-fg-color); }
+
+.md-footer__direction {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.md-footer__button { color: var(--md-default-fg-color--lighter); }
+
+.md-footer__inner {
+  padding: 1.1rem 0;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--md-typeset-table-color);
+}
+
+.md-footer__link--prev .md-footer__title { text-align: left; }
+.md-footer__link--next .md-footer__title { text-align: right; }

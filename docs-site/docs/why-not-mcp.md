@@ -1,156 +1,145 @@
-# Positioning: neighbours, not sockets
+# 定位：是邻居，不是插座
 
-> This document answers one question: for local software talking to AI, why MSP rather than MCP?
-> It is not a "protocol war" argument — it is about **shape**.
+> 本文只回答一个问题：本地软件要和 AI 对话，为什么选 MSP 而不是 MCP？
+> 这不是一场「协议战争」的争论——它讲的是**形状**。
 
-中文版（含原文表述）：[`POSITIONING.zh-CN.md`](https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md)
-
-## MCP and MSP are not the same kind of thing
+## MCP 和 MSP 不是同一类东西
 
 | | MCP | MSP |
 |---|---|---|
-| Topology | hub-and-spoke: the model is the centre, every server attaches to it | mesh: nodes are peers, the agent is just one of them |
-| Direction | pull-dominant: the model asks | pull **and push**: an app can broadcast when something happens |
-| Presence | one entry in a config file | leases: what is running right now is a fact you can read |
-| Lifetime | one call, one session | long-lived connection + heartbeat + multi-round / task semantics |
-| App-to-app | must go through the model | direct (A's capability can serve B) |
+| 拓扑 | 星型（中心辐射式）：模型在中心，每个服务端都挂到它上面 | 网状：节点彼此对等，agent 只是其中之一 |
+| 方向 | 以拉为主：模型来问 | 拉**与**推：应用可以在事情发生时主动广播 |
+| 存在感 | 配置文件里的一个条目 | 租约：此刻谁在运行，是一个可以直接读到的事实 |
+| 生命周期 | 一次调用、一次会话 | 长连接+心跳+多轮／任务语义 |
+| 应用对应用 | 必须绕经模型 | 直连（A 的能力可以直接服务 B） |
 
-So for the vision "every piece of local software can interact with AI", MCP has the wrong shape: it
-assumes software is a pile of passive tools, whereas what we want is a pile of **stateful neighbours
-that speak up and know each other**. Wrapping MCP in a shim is not merely complex — it compresses a
-mesh into a hub and throws away push and presence, the two things actually worth having.
+所以，对「每一份本地软件都能和 AI 交互」这个愿景来说，MCP 的形状是错的：它假设软件是一堆被动的工具，
+而我们要的是一堆**会主动开口、彼此认识的有状态邻居**。给 MCP 套一层兼容层不只是麻烦——它把网状
+压成了中心辐射，丢掉了推和存在感，而这两样恰恰才是真正值得拥有的东西。
 
-## Why desktop software needs "neighbour" semantics
+## 桌面软件为什么需要「邻居」语义
 
-### 1. Lifecycle ownership — stdio gets it backwards
+### 1. 生命周期归谁——stdio 把它弄反了
 
 ```
-stdio:          the agent spawns the process -> session ends, process dies -> capability dies with the session
-resident server: the app runs its own server -> app lives, capability lives -> capability follows the software
+stdio:          agent 拉起进程 -> 会话结束，进程退出 -> 能力随会话一起死掉
+常驻服务端:     应用自己跑服务端 -> 应用活着，能力就在 -> 能力跟着软件走
 ```
 
-"Presence" requires that a capability exists **while the software runs**. stdio ties it to a session
-instead, with two concrete consequences:
+「存在感」要求一项能力在**软件运行期间**始终存在。stdio 却把它绑在会话上，由此带来两个具体后果：
 
-- **State fidelity is lost**: what the client spawns is a *second* instance that does not know which
-  document the user has open.
-- **Multi-client mutual exclusion breaks**: two agents spawn two copies → two writers on one file.
+- **状态保真没了**：客户端拉起的是*第二个*实例，它不知道用户正开着哪份文档。
+- **多客户端互斥失效**：两个 agent 拉起两份副本 → 同一个文件上出现两个写入者。
 
-### 2. Presence must be "known right now", not "written down once"
+### 2. 存在感必须是「此刻知道」，而不是「写下来一次」
 
-Leases make "what is running" a fact that can be read at any moment instead of a list somebody has to
-maintain. A crashed node disappears; a restarted one reappears — **nobody has to synchronise state**.
+租约把「谁正在运行」变成随时可读的事实，而不是一份得靠人维护的名单。崩溃的节点会自己消失，
+重启的节点会自己回来——**没有人需要去同步状态**。
 
-### 3. Speaking up is what local software does
+### 3. 主动开口，本来就是本地软件干的事
 
-A download finishes, playback changes, a file lands, a device is plugged in — these happen *in the
-software*, not in the model's question. Only push carries them where they are needed.
+下载完成、播放切歌、文件落盘、插上一个设备——这些事情发生在*软件里*，而不是发生在模型的提问里。
+只有推能把它们送到该去的地方。
 
-## Three transport shapes
+## 三种传输形状
 
-| Dimension | stdio | streamable HTTP | MSP WebSocket transport |
+| 维度 | stdio | streamable HTTP | MSP WebSocket 传输 |
 |---|---|---|---|
-| Lifecycle owner | **client** | app ✓ | app ✓ |
-| Talks to the running instance | ✗ | ✓ | ✓ |
-| Stable address | ✗ | has a port, but nobody knows which | directory declaration + lease ✓ |
-| Push | ✗ | yes, on the same stream, but the client must stay connected | full duplex ✓ |
-| Multi-client | one process per client ✗ | ✓ | ✓ |
-| **Discovery** | none needed (spawned) | **the user types a URL** ✗ | automatic ✓ |
+| 生命周期归属 | **客户端** | 应用 ✓ | 应用 ✓ |
+| 能对话到正在运行的实例 | ✗ | ✓ | ✓ |
+| 稳定地址 | ✗ | 有端口，但没人知道是哪个 | 目录声明+租约 ✓ |
+| 推送 | ✗ | 有，走同一条流，但客户端必须一直连着 | 全双工 ✓ |
+| 多客户端 | 每个客户端一个进程 ✗ | ✓ | ✓ |
+| **发现** | 不需要（由客户端拉起） | **用户手输一个 URL** ✗ | 自动 ✓ |
 
-**stdio is a convention for wiring tools** (fine for filesystem, git, sqlite — stateless or with state
-on disk), not a convention for neighbours.
+**stdio 是一套给工具接线的约定**（对 filesystem、git、sqlite 挺合适——它们无状态，或者状态就在
+磁盘上），而不是一套对待邻居的约定。
 
-**Streamable HTTP fixes the lifecycle but hands discovery straight back to you**: the user still has to
-know `http://127.0.0.1:8721/mcp`, and has to know whether it changed today. Whatever transport MCP uses,
-the missing piece is the same: **a stable addressing layer that appears and disappears by itself**. MCP
-has never standardised it; it always defers to config files.
+**streamable HTTP 修好了生命周期，却把发现原封不动地还给你**：用户还是得知道
+`http://127.0.0.1:8721/mcp`，还得知道它今天有没有变。无论 MCP 用哪种传输，缺的那一块始终一样：
+**一个能自己出现、自己消失的稳定寻址层**。MCP 从来没把它标准化过，每次都推给配置文件。
 
-Practical traps on Windows: a fixed port collides, a dynamic port needs a declaration file even more;
-binding `0.0.0.0` triggers a firewall prompt while `127.0.0.1` stays quiet; any local process can hit
-the port, so authorisation ends up being "put a token in a file and let file permissions be the
-credential" — exactly the MSP lease idea. And the ecosystem reality: most MCP servers are still stdio,
-because early clients only supported stdio.
+Windows 上的实际坑：固定端口会撞车，动态端口反而更需要一个声明文件；绑 `0.0.0.0` 会弹防火墙确认，
+绑 `127.0.0.1` 则安安静静；任何本地进程都能打到这个端口，于是授权最后变成「把 token 写进文件，让文件
+权限充当凭证」——那正好就是 MSP 的租约思路。再看生态的现状：大多数 MCP 服务端至今仍是 stdio，
+因为早期的客户端只支持 stdio。
 
-## What this choice costs us
+## 这个选择的代价
 
-**Choosing MSP keeps the supply-side cost on our own books.** MCP has a ready ecosystem (thousands of
-servers, vendor support); we give up that free supply.
+**选 MSP，等于把供给侧的成本记在自己账上。**MCP 有一个现成的生态（成千上万的服务端、厂商支持），
+这部分免费供给是我们放弃的。
 
-And to be honest: **MSP's adoption problem is the same problem MCP has — some app has to implement it.
-A discovery mechanism does not fix "nobody wants to implement it".**
+说实话：**MSP 的普及难题和 MCP 是同一个——总得有个应用先去实现它。而发现机制并不能解决
+「没人想实现」这件事。**
 
-The trade is worth making, but make it **deliberately**, and do not come back later asking "why is
-there no ecosystem". It is a chosen cost, not an oversight.
+这笔交易值得做，但要**有意识地**做，别过一阵又回来问「为什么没有生态」。这是主动选下的成本，
+不是疏漏。
 
-## The boundary: one protocol at runtime, MCP only at import time
+## 边界：运行时只有一种协议，MCP 只出现在导入时
 
-Do not maintain a dual-protocol runtime. Put MCP at **import time**, not at runtime:
+不要维护一个双协议的运行时。把 MCP 放到**导入时**，而不是运行时：
 
-> The runtime speaks MSP only. MCP appears exactly once, during conversion.
+> 运行时只说 MSP。MCP 只出现一次，就在转换的时候。
 
 ```
-Conversion (once):
-  run a tool -> start the MCP server -> call tools/list -> record the tool list -> write a declaration
+转换（只做一次）:
+  跑一次工具 -> 启动 MCP 服务端 -> 调 tools/list -> 记录工具清单 -> 写一份声明
 
-Runtime (forever after):
-  agent -- MSP --> [adapter process] -- MCP --> the original app
-                        ^
-              an ordinary MSP node that happens to speak MCP internally
+运行时（此后一直如此）:
+  agent -- MSP --> [适配器进程] -- MCP --> 原来那个应用
+                   ^
+              一个普通的 MSP 节点，只是它内部恰好说 MCP
 ```
 
-The point: **the agent side never knows MCP exists.** It sees "there is a node called `wps` with six
-tools".
+关键在于：**agent 这一侧永远不知道 MCP 存在。**它看到的只是「有一个叫 `wps` 的节点，带六个工具」。
 
-| | Wrapper (permanent dual protocol) | Adapter (one-time move) |
+| | 包装层（永久的双协议） | 适配器（一次性搬走） |
 |---|---|---|
-| Core code | gains an MCP branch | untouched |
-| Config | gains an endpoint type | none; the node announces itself |
-| When it breaks | "MSP, the shim, or the server?" | the node is offline; the panel shows it |
-| Enable / disable | edit the core | stop the process |
-| Replace it | touches the core | swap the adapter |
+| 核心代码 | 多出一个 MCP 分支 | 原样不动 |
+| 配置 | 多出一种端点类型 | 不需要；节点自己宣告自己 |
+| 出故障时 | 「是 MSP、兼容层，还是服务端？」 | 节点离线；面板上看得见 |
+| 启用／停用 | 改核心 | 停掉进程 |
+| 替换它 | 会牵动核心 | 换掉适配器 |
 
-> A wrapper invites the translator into the driver's seat; a move unloads the van and the translator
-> leaves.
+> 包装层是把翻译请进驾驶座；搬一趟家则是卸完货车，翻译就走人。
 
-One honest clarification: **the tool list can be moved once, but calls still have to reach the app** —
-you cannot rewrite WPS in MSP. So the accurate statement is "MCP lives only inside a separate adapter
-process, and that process is just an ordinary MSP node to the agent". The value is not "MCP vanished"
-but:
+有一点需要诚实说明：**工具清单可以搬一次，但调用最终还是要打到应用上**——你没法用 MSP 重写 WPS。
+所以准确的说法是「MCP 只活在一个独立的适配器进程里，而这个进程对 agent 来说只是一个普通的 MSP 节点」。
+价值不在于「MCP 消失了」，而在于：
 
-1. the core stays single-protocol (one failure mode, one debugging story);
-2. MCP's mess is isolated in the layer that is **easiest to write, drop and replace**;
-3. that shell has the same shape as the SDK for native apps — so there is **one integration shape**, not two.
+1. 核心保持单协议（一种故障模式，一条排查路径）；
+2. MCP 的乱被隔离在**最容易写、最容易丢、最容易换**的那一层；
+3. 那层外壳和原生应用用的 SDK 形状相同——于是只有**一种接入形状**，而不是两种。
 
-### Rule of thumb
+### 判断法则
 
-**"Does this app have user-visible state?"**
+**「这个应用有没有用户看得见的状态？」**
 
-- Yes (editors, players, download managers, IDEs) → it should be a **native MSP node** hosting its own server.
-- No (filesystem, git, web scraping, SQLite) → **wrap it in an adapter**; do not rework the app.
+- 有（编辑器、播放器、下载器、IDE）→ 它应当做成**原生 MSP 节点**，自己托管一个服务端。
+- 没有（filesystem、git、网页抓取、SQLite）→ **用适配器包一层**；不要改造应用本身。
 
-## Open questions (honest list)
+## 未解决的问题（诚实清单）
 
-1. **An OS-level discovery convention**: the mechanism exists (lease directory); what is missing is
-   vendors willing to write it. An ecosystem problem, not a technical one.
-2. **A 20-line SDK** for C#/C++/Node/Python: declaration, forwarding, heartbeat included. Authors
-   should be filling in three fields, not implementing a protocol.
-3. **One-time consent**: discovery-as-trust is a hole locally (any process can claim to be WPS).
-   Ask once, "allow this app?", then stay quiet.
-4. **Tool explosion**: 30 local apps × 10 tools = 300 schemas, which blows up the context window.
-   **Auto-discovery turns "resident catalogue, on-demand contracts" from an optimisation into a necessity.**
+1. **一套操作系统级的发现约定**：机制是现成的（租约目录），缺的是愿意去写它的厂商。这是生态问题，
+   不是技术问题。
+2. **一个 20 行的 SDK**，覆盖 C#/C++/Node/Python：声明、转发、心跳都在里面。作者应当只需要
+   填三个字段，而不是去实现一套协议。
+3. **一次性的授权**：把发现当作信任，在本地是个口子（任何进程都能自称是 WPS）。
+   问一次「允许这个应用吗？」，之后就别再打扰。
+4. **工具爆炸**：30 个本地应用×10 个工具=300 个 schema，直接把 context window 撑爆。
+   **自动发现让「常驻目录、按需契约」从一种优化变成必需品。**
 
-## In one sentence
+## 一句话
 
-> MSP is not selling "yet another tool protocol"; it sells **presence for local software** — it knows
-> who is connected to it, it can speak up when something happens, and it can work with its neighbours
-> directly. MCP's structure cannot give you those three.
+> MSP 卖的不是「又一套工具协议」，它卖的是**本地软件的存在感**——它知道自己身上连着谁，事情发生时
+> 它能主动开口，它还能直接和邻居打交道。这三样，MCP 的结构给不了。
 
-## The most painful example
+## 最扎心的例子
 
-> You say: "delete the third row of the sheet I just opened."
-> The sheet is on your screen, never saved, titled "Workbook1".
-> Under stdio, the agent spawns **a second WPS process**: its window list is empty, there is no
-> "Workbook1", so all it can answer is: "Please give me the file path."
-> — and you have not even named it yet.
+> 你说：「把我刚打开的那个表格的第三行删掉。」
+> 表格就在你屏幕上，从没保存过，标题是「Workbook1」。
+> 在 stdio 之下，agent 会拉起**第二个 WPS 进程**：它的窗口列表是空的，里面没有那个「Workbook1」，
+> 所以它能回答的只有一句：「请把文件路径给我。」
+> ——而你连名字都还没给它起过。
 >
-> That is the shape problem: **you and the agent are not looking at the same software.**
+> 这就是形状问题：**你和 agent 看的不是同一个软件。**

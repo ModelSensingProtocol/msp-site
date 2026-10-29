@@ -43,7 +43,7 @@ module.exports = {
           // 有版本快照后，当前 docs/ 是「下一版」；默认展示最新已发布版本
           lastVersion: "2026-10-10",
           versions: {
-            current: { label: "Next", path: "next" },
+            current: { label: "下一版", path: "next" },
             "2026-10-10": { label: "2026-10-10", banner: "none" },
           },
         },

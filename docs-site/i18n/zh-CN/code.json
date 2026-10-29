@@ -1,0 +1,130 @@
+{
+  "theme.ErrorPageContent.title": {
+    "message": "页面出错了。",
+    "description": "The title of the fallback page when the page crashed"
+  },
+  "theme.ErrorPageContent.tryAgain": {
+    "message": "重试",
+    "description": "The label of the retry button"
+  },
+  "theme.BackToTopButton.buttonAriaLabel": {
+    "message": "回到顶部",
+    "description": "The ARIA label for the back to top button"
+  },
+  "theme.NotFound.title": {
+    "message": "页面不存在",
+    "description": "The title of the 404 page"
+  },
+  "theme.NotFound.p1": {
+    "message": "找不到你要的页面。",
+    "description": "The first paragraph of the 404 page"
+  },
+  "theme.NotFound.p2": {
+    "message": "请联系把你引到这个地址的站点，告诉他们这个链接已经失效。",
+    "description": "The second paragraph of the 404 page"
+  },
+  "theme.common.skipToMainContent": {
+    "message": "跳到正文",
+    "description": "The skip to content label used for accessibility"
+  },
+  "theme.common.editThisPage": {
+    "message": "编辑此页",
+    "description": "The link label to edit the current page"
+  },
+  "theme.common.headingLinkTitle": {
+    "message": "指向 {heading} 的直接链接",
+    "description": "Aria label for anchor links on headings"
+  },
+  "theme.docs.breadcrumbs.home": {
+    "message": "首页",
+    "description": "The ARIA label and title attribute for the home breadcrumb"
+  },
+  "theme.docs.breadcrumbs.navAriaLabel": {
+    "message": "面包屑",
+    "description": "The ARIA label for the breadcrumbs"
+  },
+  "theme.docs.paginator.previous": {
+    "message": "上一页",
+    "description": "The label used to navigate to the previous doc"
+  },
+  "theme.docs.paginator.next": {
+    "message": "下一页",
+    "description": "The label used to navigate to the next doc"
+  },
+  "theme.docs.paginator.navAriaLabel": {
+    "message": "文档翻页",
+    "description": "The ARIA label for the docs pagination"
+  },
+  "theme.docs.sidebar.navAriaLabel": {
+    "message": "文档侧栏",
+    "description": "The ARIA label for the sidebar navigation"
+  },
+  "theme.docs.sidebar.collapseButtonTitle": {
+    "message": "收起侧栏",
+    "description": "The title attribute for collapse button"
+  },
+  "theme.docs.sidebar.collapseButtonAriaLabel": {
+    "message": "收起侧栏",
+    "description": "The title attribute for collapse button"
+  },
+  "theme.docs.sidebar.expandButtonTitle": {
+    "message": "展开侧栏",
+    "description": "The title attribute for expand button"
+  },
+  "theme.docs.sidebar.expandButtonAriaLabel": {
+    "message": "展开侧栏",
+    "description": "The title attribute for expand button"
+  },
+  "theme.docs.sidebar.closeSidebarButtonAriaLabel": {
+    "message": "关闭导航栏",
+    "description": "The ARIA label for close button of mobile sidebar"
+  },
+  "theme.docs.sidebar.toggleSidebarButtonAriaLabel": {
+    "message": "切换导航栏",
+    "description": "The ARIA label for hamburger menu button of mobile navigation"
+  },
+  "theme.docs.versionBadge.label": {
+    "message": "版本：{versionLabel}",
+    "description": "The label for the version badge"
+  },
+  "theme.docs.versions.unreleasedVersionLabel": {
+    "message": "这是 {siteTitle} {versionLabel} 的未发布文档。",
+    "description": "The label used to tell the user that the version is unreleased"
+  },
+  "theme.docs.versions.unmaintainedVersionLabel": {
+    "message": "这是 {siteTitle} {versionLabel} 的文档，已不再积极维护。",
+    "description": "The label used to tell the user that the version is no longer maintained"
+  },
+  "theme.docs.versions.latestVersionSuggestionLabel": {
+    "message": "最新文档见 {latestVersionLink}（{versionLabel}）。",
+    "description": "The label used to tell the user to try the latest version"
+  },
+  "theme.docs.versions.latestVersionLinkLabel": {
+    "message": "最新版本",
+    "description": "The label used for the latest version suggestion link label"
+  },
+  "theme.CodeBlock.copy": {
+    "message": "复制",
+    "description": "The copy button label on code blocks"
+  },
+  "theme.CodeBlock.copyButtonAriaLabel": {
+    "message": "复制代码",
+    "description": "The ARIA label for copy code blocks button"
+  },
+  "theme.colorToggle.ariaLabel": {
+    "message": "切换浅色 / 深色模式（当前：{mode}）",
+    "description": "The ARIA label for the navbar color mode toggle"
+  },
+  "theme.colorToggle.ariaLabel.mode.system": {
+    "message": "跟随系统",
+    "description": "The name for the system color mode"
+  },
+  "theme.colorToggle.ariaLabel.mode.light": {
+    "message": "浅色",
+    "description": "The name for the light color mode"
+  },
+  "theme.colorToggle.ariaLabel.mode.dark": {
+    "message": "深色",
+    "description": "The name for the dark color mode"
+  }
+}

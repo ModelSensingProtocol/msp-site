@@ -6,6 +6,7 @@ docs-site/.docusaurus/
 # 组装与本地构建产物
 _out/
 _assembled/
+_tmp_site/
 
 # Python（favicon 生成脚本用）
 __pycache__/

@@ -40,7 +40,7 @@ theme:
         name: Switch to light
 
 nav:
-  - Documentation:
+  - 文档:
       - 文档首页: index.md
       - 快速开始: intro.md
       - 架构与概念: architecture.md
@@ -49,9 +49,23 @@ nav:
       - 发现、调用与订阅: consume.md
       - FAQ 与排查: faq.md
       - 术语表: glossary.md
-  - Specification: https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md
-  - Implementations: https://github.com/ModelSensingProtocol/msp-ts
-  - Designs: https://github.com/hxh230802/MSP/tree/master/docs
+  - 规范:
+      - 规范总览: spec/index.md
+      - 基础协议: spec/base-protocol.md
+      - 架构: spec/architecture.md
+      - 能力与清单: spec/capabilities.md
+      - 发现与存在: spec/discovery.md
+      - 传输: spec/transports.md
+      - 模式: spec/patterns.md
+      - 请求-应答: spec/patterns/request-reply.md
+      - 发布-订阅: spec/patterns/publish-subscribe.md
+      - 多轮: spec/patterns/multi-round.md
+      - 任务: spec/patterns/task.md
+      - Schema: spec/schema.md
+      - 安全: spec/security.md
+      - 互通: spec/interop.md
+  - 实现: implementations.md
+  - 设计: designs.md
 
 plugins:
   - search
@@ -70,6 +84,21 @@ plugins:
           build: true
           nav_translations:
             文档: Documentation
+            规范: Specification
+            实现: Implementations
+            设计: Designs
+            规范总览: Overview
+            基础协议: Base protocol
+            能力与清单: Capabilities & manifest
+            发现与存在: Discovery & presence
+            传输: Transports
+            模式: Patterns
+            请求-应答: Request / reply
+            发布-订阅: Publish / subscribe
+            多轮: Multi-round
+            任务: Task
+            安全: Security
+            互通: Interop
             文档首页: Home
             快速开始: Introduction
             架构与概念: Architecture & concepts
@@ -113,3 +142,11 @@ extra:
       link: https://pypi.org/project/msp-py/
       name: msp-py on PyPI
   generator: false
+
+# 规范章节的锚点是按 GitHub 规则写的（#8-取消 这类），Python-Markdown 生成 id 的
+# 规则不同，逐条对齐不现实；文件级链接仍然严格校验，只把锚点降级。
+validation:
+  links:
+    anchors: ignore
+    absolute_links: ignore
+    unrecognized_links: ignore

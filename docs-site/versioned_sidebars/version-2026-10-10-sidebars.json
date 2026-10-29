@@ -7,6 +7,17 @@
     "provide-tools",
     "consume",
     "faq",
-    "glossary"
+    "glossary",
+    {
+      "type": "category",
+      "label": "示例",
+      "items": [
+        "examples/index",
+        "examples/weather",
+        "examples/downloader",
+        "examples/editor",
+        "examples/probe"
+      ]
+    }
   ]
 }

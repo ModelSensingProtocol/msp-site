@@ -493,3 +493,27 @@ body {
 
 .md-footer__link--prev .md-footer__title { text-align: left; }
 .md-footer__link--next .md-footer__title { text-align: right; }
+
+/* 上一页/下一页：不要撑满 90rem（两个按钮会离得极远），收进正文列宽度 */
+.md-footer__inner {
+  max-width: 58rem;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 1rem 0.2rem;
+  gap: 2rem;
+}
+
+.md-footer__link {
+  max-width: 46%;
+  align-items: center;
+}
+
+.md-footer__title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.md-footer__link--prev { justify-content: flex-start; }
+.md-footer__link--next { justify-content: flex-end; text-align: right; }

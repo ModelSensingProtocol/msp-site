@@ -47,6 +47,20 @@ MSP_NODES_DIR=/tmp/msp-demo python examples/weather.py
 
 这样演示节点不会和你真正的节点混在同一个发现目录里。
 
+## 改示例之后
+
+`/docs/` 展示的是 **2026-10-10 版本快照**，改动要先同步进去才会出现在默认路径上：
+
+```bash
+cd docs-site
+rm -rf versioned_docs versioned_sidebars && echo '[]' > versions.json
+# 临时注释掉 docusaurus.config.js 里的 lastVersion/versions，然后：
+./node_modules/.bin/docusaurus docs:version 2026-10-10
+# 再把那两行恢复
+```
+
+只改示例代码时，也别忘了 `versioned_docs/` 里的同一份。
+
 ## 这些示例不是"看起来能跑"
 
 `tools/check_examples.py` 做三件实事：

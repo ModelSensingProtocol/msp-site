@@ -18,7 +18,7 @@ PYTHONPATH=src python examples/probe.py
 
 ## 代码
 
-下载：[`probe.py`](/examples/probe.py)
+下载：<a href="../probe.py" download><code>probe.py</code></a>（Docusaurus 会把 md 里的静态文件链接改写成带 hash 的路径，而那个地址 404，所以这里用原生 a 标签指向真实文件）
 
 ```python
 """示例 4：只看不说（观察者）。

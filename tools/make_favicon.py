@@ -23,8 +23,31 @@ GREY = (168, 162, 158, 255)    # 离线邻居
 EDGE = (87, 83, 78, 255)
 
 
+def dashed(d, a, b, fill, width, dash, gap):
+    """在两点之间画虚线（Pillow 没有 dash 参数，自己切段）。"""
+    (x1, y1), (x2, y2) = a, b
+    length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    if length == 0:
+        return
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    t = 0.0
+    while t < length:
+        t2 = min(t + dash, length)
+        d.line(
+            [(x1 + ux * t, y1 + uy * t), (x1 + ux * t2, y1 + uy * t2)],
+            fill=fill,
+            width=width,
+        )
+        t = t2 + gap
+
+
 def draw(size: int) -> Image.Image:
-    """画一个 size×size 的图标。内部按 4 倍绘制再缩小，边缘才干净。"""
+    """画一个 size×size 的图标。内部按 4 倍绘制再缩小，边缘才干净。
+
+    构图沿用原来的「中心 + 三个卫星」，另加一条**顶部↔右侧的直连**：
+    那两个节点之间不必经过中心，这正是 MSP 想表达的。中心到各卫星的辐条
+    保持细而浅，直连用节点本身的绿色、且更粗——主路径一眼可辨。
+    """
     s = size * 4
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -33,22 +56,27 @@ def draw(size: int) -> Image.Image:
     d.rounded_rectangle([pad, pad, s - pad, s - pad], radius=s * 0.22, fill=INK)
 
     cx = cy = s / 2
-    r_main = s * 0.135
-    r_sat = s * 0.10
-    nodes = [
-        ((s / 2, s * 0.26), r_sat, GREEN),
-        ((s * 0.74, s * 0.70), r_sat, GREEN),
-        ((s * 0.26, s * 0.70), r_sat, GREY),
-    ]
+    centre = (cx, cy)
+    r_centre = s * 0.115
+    r_sat = s * 0.088
+    top = (cx, s * 0.215)
+    right = (s * 0.785, s * 0.715)
+    left = (s * 0.215, s * 0.715)
 
-    width = max(1, int(s * 0.05))
-    for (x, y), _r, _c in nodes:
-        d.line([(x, y), (cx, cy)], fill=EDGE, width=width)
+    # 辐条：细、浅（表示"也能这样连"，不是主路径）
+    spoke_w = max(1, int(s * 0.022))
+    for pt in (top, right, left):
+        d.line([centre, pt], fill=EDGE, width=spoke_w)
 
-    for (x, y), r, color in nodes:
-        d.ellipse([x - r, y - r, x + r, y + r], fill=color)
+    # 直连：两个卫星之间的实线，比辐条粗，用节点绿
+    d.line([top, right], fill=GREEN, width=max(2, int(s * 0.042)))
 
-    d.ellipse([cx - r_main, cy - r_main, cx + r_main, cy + r_main], fill=PAPER)
+    for pt, color in ((top, GREEN), (right, GREEN), (left, GREY)):
+        d.ellipse([pt[0] - r_sat, pt[1] - r_sat, pt[0] + r_sat, pt[1] + r_sat], fill=color)
+
+    d.ellipse(
+        [cx - r_centre, cy - r_centre, cx + r_centre, cy + r_centre], fill=PAPER
+    )
     return img.resize((size, size), Image.LANCZOS)
 
 

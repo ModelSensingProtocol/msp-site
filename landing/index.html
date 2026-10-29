@@ -16,13 +16,16 @@
 
 <header class="nav">
   <a class="brand" href="#top">
-    <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.4" fill="currentColor"/>
-      <circle cx="8" cy="2.2" r="1.2" fill="#2f9e6b"/>
-      <circle cx="13.2" cy="11" r="1.2" fill="#2f9e6b"/>
-      <circle cx="2.8" cy="11" r="1.2" fill="#7c869c"/>
-      <path d="M8 5.6V4M9.4 9.2l2.2 1.1M6.6 9.2 4.4 10.3" stroke="currentColor" stroke-width=".9" fill="none"/>
-    </svg>
+      <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+        <!-- 中心 + 三个卫星；另加一条「顶部↔右侧」的直连：节点之间不必经过中心 -->
+        <circle cx="8" cy="8" r="2.4" fill="currentColor"/>
+        <circle cx="8" cy="2.2" r="1.2" fill="#2f9e6b"/>
+        <circle cx="13.2" cy="11" r="1.2" fill="#2f9e6b"/>
+        <circle cx="2.8" cy="11" r="1.2" fill="#7c869c"/>
+        <path d="M8 5.6V4M9.4 9.2l2.2 1.1M6.6 9.2 4.4 10.3" stroke="currentColor"
+              stroke-opacity=".55" stroke-width=".9" fill="none"/>
+        <line x1="8.5" y1="3.3" x2="12.6" y2="9.9" stroke="#2f9e6b" stroke-width="1.4"/>
+      </svg>
     <span>MSP</span>
   </a>
   <nav>

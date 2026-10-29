@@ -13,6 +13,7 @@ theme:
     - navigation.tabs          # 第二行 tab 导航（对齐 MCP 的 Documentation/…）
     - navigation.tabs.sticky
     - navigation.path          # 面包屑
+    - navigation.footer        # 上一页/下一页（MCP 页尾那两个箭头）
     - navigation.tracking
     - navigation.top
     - content.code.copy        # 代码块复制按钮

@@ -11,3 +11,4 @@ _tmp_site/
 # Python（favicon 生成脚本用）
 __pycache__/
 *.pyc
+_s.log

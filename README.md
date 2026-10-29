@@ -1,102 +1,161 @@
 # msp-site
 
-The MSP website: a hand-written landing page plus a documentation site built with **Docusaurus 3**.
+The MSP website.
+
+- **`landing/`** — hand-written static pages (`/` English, `/zh/` Chinese). No build step.
+- **`docs-site/`** — the documentation site, built with **Docusaurus 3**. Five independent docs
+  instances behind one navbar: Documentation, Specification, Implementations, Design, Case studies.
+
+Live: <https://modelsensingprotocol.github.io/msp-site/>
 
 ```
-/                  landing/         静态两页（英文 / 中文），无构建
-/docs/             docs-site/       文档站：默认展示 2026-10-10 版本
-/docs/next/                        未发布的下一版
-/docs/spec/                        规范（独立的 docs 实例）
-/docs/impl/ · /docs/design/        实现 / 设计（各自独立的 docs 实例）
+/                        landing/                    手写静态页（英文）
+/zh/                     landing/zh/                 手写静态页（中文）
+/docs/                   docs-site/                 文档，默认展示 2026-10-10
+/docs/next/                                          未发布的下一版
+/docs/spec/                                          规范
+/docs/impl/  /docs/design/  /docs/case/               实现 / 设计 / 案例
+/docs/zh/                                            以上全部的中文版
 ```
 
-## 为什么是 Docusaurus
-
-之前用 MkDocs Material，为了拿版本化和多语言各加了一个插件，还踩了两处坑：
-`mike` 要靠 gh-pages 分支加一层 `git archive` 导出；`mkdocs-static-i18n` 与
-`navigation.instant` 不兼容，只能关掉。这两件事在 Docusaurus 里都是原生能力。
-
-代价：仓库里多了一条 Node 工具链（`node_modules` 约 218 MB，构建 30–60 秒）。
-换来的是：每个分区可以有完全独立的侧栏、版本下拉、语言下拉都是内置组件。
-
-## 本地开发
+## Quick start
 
 ```bash
-# 文档站
 cd docs-site
 npm install
-npm run start            # http://localhost:3000/msp-site/docs/
+npm run start      # → http://localhost:3000/msp-site/docs/
+```
 
-# landing（纯静态）
+Landing page (plain files, no toolchain):
+
+```bash
 python -m http.server 8899
 # → http://127.0.0.1:8899/landing/
 ```
 
-构建产物：
+Build:
 
 ```bash
-cd docs-site && npm run build      # → docs-site/build
+cd docs-site && npm run build     # → docs-site/build
 ```
 
-## 发布
+## What lives where
 
-`.github/workflows/pages.yml`：`npm ci` → `npm run build` → 把 `landing/` 放根、
-`docs-site/build/` 放 `/docs/` → 上传 Pages。需要 **Settings → Pages → Source: GitHub Actions**。
+| Path | What it is | Language |
+|---|---|---|
+| `docs-site/docs/` | Documentation — the working guide | English (source) |
+| `docs-site/spec/` | Specification chapters | English (source) |
+| `docs-site/impl/` | Implementation status | English (source) |
+| `docs-site/design/` | Design decisions | English (source) |
+| `docs-site/case/` | Case studies of real adopters | English (source) |
+| `docs-site/i18n/zh/docusaurus-plugin-content-docs-*/` | Chinese translations, one tree per instance | 中文 |
+| `docs-site/versioned_docs/version-2026-10-10/` | Frozen snapshot served at `/docs/` | — |
+| `landing/`, `landing/zh/` | The landing page, both languages | — |
+| `tools/` | `make_favicon.py`, `localize_landing.py` | — |
+| `docs-site/tools/check_examples.py` | Runs the example nodes for real | — |
 
-## 版本化
+Content is copied from the main repository (`docs/wiki/`, `docs/spec/`, `docs/DESIGN.md`); the
+main repository stays the source of truth, this one is the published form.
 
+## Everyday tasks
+
+**Add a page.** Drop a `.md` in the right instance, then add it to that instance's
+`sidebars-*.js`. Nothing else — the navbar tabs are already wired.
+
+**Add a case study.** Put a page in `docs-site/case/`, add it to `sidebars-case.js`, and keep to
+what is checkable: the node id, the tools and their arguments, how it is enabled, whether it is on
+by default, and what it does *not* do.
+
+**Translate a page.** Copy it to
+`docs-site/i18n/zh/docusaurus-plugin-content-docs-<instance>/current/<same-path>.md` and translate.
+Missing translations fall back to English.
+
+**Change an example.** Edit `docs-site/static/examples/*.py`, then run the checks (below). Pages in
+`docs/examples/` embed the same code, so keep them in step.
+
+## Checks
+
+```bash
+# the docs build, with broken-link warnings surfaced
+cd docs-site && npm run build
+
+# the example nodes actually run: tool call, signal handoff, observer
+cd docs-site && PYTHONPATH=../src python tools/check_examples.py
 ```
-docs/                    ← 当前开发版（Next）
-versioned_docs/version-2026-10-10/   ← 已发布快照
-versions.json            ← 版本清单，驱动右上角的下拉
-```
 
-发新修订时：
+The second one is not decoration. It starts `weather.py`, calls `get_weather` and asserts the
+result; starts `downloader.py` + `editor.py` and asserts the subscriber really received the
+completion signal; and checks that the observer can see a peer.
+
+## Versioning
+
+`/docs/` serves the **2026-10-10** snapshot; unreleased work lives in `docs/` and is served at
+`/docs/next/`. To freeze the current state as a new revision:
 
 ```bash
 cd docs-site
-npm run version 2026-12-01     # 把当前 docs/ 快照成新版本
+# 1. temporarily drop lastVersion/versions from docusaurus.config.js
+# 2. snapshot:
+npm run version 2027-01-01
+# 3. put those two settings back, pointing at the new revision
 ```
 
-注意：只有**主文档**实例带版本；`spec` / `impl` / `design` 三个实例不分版本——
-Docusaurus 的 `docs:version` 只作用于默认实例。规范本身用 `schema/<修订号>/` 表达版本。
+Step 1 matters: `docs:version` fails if the config names a version that does not exist yet.
 
-## 语言
+Only the Documentation instance is versioned — `docs:version` applies to the default instance.
+The specification carries its own revision elsewhere (`schema/<revision>/` in the main repository).
 
-中文是默认语言（`i18n.defaultLocale: zh-CN`），英文在 `/docs/en/` 下：
+## Languages
 
-```
-docs/intro.md                             中文正文
-i18n/en/docusaurus-plugin-content-docs/current/intro.md   英文译文
-```
+English is the default locale; Chinese lives under `/docs/zh/` and is provided per docs instance
+through `i18n/zh/`. The navbar labels are translated in
+`i18n/zh/docusaurus-theme-classic/navbar.json` — the key is `item.label.<exact English label>`, and
+a mismatch fails silently, so verify the tab actually changes.
 
-目前只有文档首页与快速开始有英文译文，其余页面回落中文。
+## Landing page
 
-## landing 的两页怎么同步
-
-`landing/zh/index.html` 由 `tools/localize_landing.py` 从英文页生成（约 50 条对照）。
-改英文页后跑一次：
+Two hand-written pages. `landing/zh/index.html` is generated from the English one:
 
 ```bash
 python tools/localize_landing.py
 ```
 
-## Favicon
+Run it after editing the English page, or the two drift apart.
 
-`landing/assets/favicon-*.png` 与 `docs-site/static/favicon.png` 由脚本生成：
+## Favicon
 
 ```bash
 pip install pillow
 python tools/make_favicon.py
 ```
 
-图案是文档页头与 landing 拓扑图用的同一套语义：深色圆角方块 + 白色中心节点 +
-两个绿色在线邻居 + 一个灰色离线节点。
+Generates `favicon-{16,32,48,64,180,512}.png` and `favicon.ico` into `docs-site/static/` and
+`landing/assets/`. The mark is a square (no rounded corners): a centre node, three satellites, and
+one **direct link** between two satellites — the node-to-node path that does not go through the
+centre.
 
-## 图不要撒谎
+## Deploy
 
-landing 的拓扑示意图画了四种边（实测 / 对端自报 / 推断 / 已知未连），因为 MSP 没有
-gossip——一个节点只看得见自己的边。把它们并成一条线，就是这个站最容易撒的谎。
+`.github/workflows/pages.yml`: `npm ci` → `npm run build`, then assemble `landing/` at the site root
+and `docs-site/build/` under `/docs/`, and upload that. Needs **Settings → Pages → Source: GitHub
+Actions** once.
+
+## Costs, stated plainly
+
+- A second toolchain in this repository: `node_modules` is ~218 MB and a cold build takes ~30–60 s
+  (MkDocs did 48 pages in 2–8 s).
+- `docs:version` only versions the default instance, so Specification / Implementations / Design /
+  Case studies are unversioned by design.
+- The landing page is duplicated by design; the generator keeps the two in step.
+
+We took these on because versioned docs and a language switcher were two plugins plus two
+workarounds under MkDocs Material, and both are native here.
+
+## Don't let the diagram lie
+
+The landing page draws four kinds of edges — observed, reported by a peer, inferred, and known but
+not connected — because MSP has no gossip: a node only ever sees its own edges. Collapsing them into
+one line would be the easiest lie this site could tell.
 
 ## License
 
@@ -104,6 +163,7 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-中文摘要：`landing/` 是手写静态页（英/中两版），`docs-site/` 是 Docusaurus 文档站。
-`/docs/` 默认展示 2026-10-10，`/docs/next/` 是开发版，`/docs/spec|impl|design/` 是另外三个
-独立实例。发新修订用 `npm run version <修订号>`。
+中文摘要：`landing/` 是手写静态页（英 / 中两版），`docs-site/` 是 Docusaurus 文档站，
+含文档 / 规范 / 实现 / 设计 / 案例五个独立实例，英文为默认语言、中文在 `i18n/zh/`。
+`/docs/` 默认展示 2026-10-10，`/docs/next/` 是开发版。
+改示例后请跑 `docs-site/tools/check_examples.py`——它真的会起节点、调工具、等信号。

@@ -23,6 +23,10 @@
     "message": "设计",
     "description": "Navbar item with label Design"
   },
+  "item.label.Case studies": {
+    "message": "案例",
+    "description": "Navbar item with label Case studies"
+  },
   "item.label.GitHub": {
     "message": "GitHub",
     "description": "Navbar item with label GitHub"

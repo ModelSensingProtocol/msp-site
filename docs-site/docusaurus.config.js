@@ -66,6 +66,10 @@ module.exports = {
       "@docusaurus/plugin-content-docs",
       { id: "design", path: "design", routeBasePath: "design", sidebarPath: "./sidebars-design.js" },
     ],
+    [
+      "@docusaurus/plugin-content-docs",
+      { id: "case", path: "case", routeBasePath: "case", sidebarPath: "./sidebars-case.js" },
+    ],
   ],
 
   themeConfig: {
@@ -79,6 +83,7 @@ module.exports = {
         { type: "docSidebar", docsPluginId: "spec", sidebarId: "main", label: "Specification", position: "left" },
         { type: "docSidebar", docsPluginId: "impl", sidebarId: "main", label: "Implementations", position: "left" },
         { type: "docSidebar", docsPluginId: "design", sidebarId: "main", label: "Design", position: "left" },
+        { type: "docSidebar", docsPluginId: "case", sidebarId: "main", label: "Case studies", position: "left" },
         { type: "docsVersionDropdown", position: "right" },
         { type: "localeDropdown", position: "right" },
         { href: "https://github.com/ModelSensingProtocol/msp-site", label: "GitHub", position: "right" },

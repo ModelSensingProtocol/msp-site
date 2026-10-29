@@ -91,7 +91,7 @@ module.exports = {
     },
     prism: {
       theme: themes.github,
-      darkTheme: themes.vsDark,
+      darkTheme: themes.dracula,
       additionalLanguages: ["python", "bash", "json", "yaml", "toml"],
     },
     docs: { sidebar: { hideable: false, autoCollapseCategories: true } },

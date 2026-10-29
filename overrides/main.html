@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{#
+  仿 modelcontextprotocol.io 的三个部件：
+  1. 标题行右侧的「Copy page」按钮
+  2. 正文底部的「Was this page helpful? Yes / No」
+  3. 顶栏右侧的 Ctrl K 提示（搜索框样式由 extra.css 处理）
+#}
+
+{% block content %}
+  <div class="msp-titlebar">
+    <div class="msp-titlebar__main">
+      {{ super() }}
+    </div>
+    <button class="msp-copy" type="button" data-msp-copy
+            title="Copy this page as Markdown">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
+      </svg>
+      <span>Copy page</span>
+    </button>
+  </div>
+
+  <div class="msp-helpful" data-msp-helpful>
+    <span>Was this page helpful?</span>
+    <span class="msp-helpful__actions">
+      <button type="button" data-msp-vote="yes">Yes</button>
+      <button type="button" data-msp-vote="no">No</button>
+    </span>
+    <span class="msp-helpful__thanks" hidden>Thanks — noted locally, nothing is sent anywhere.</span>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+  (function () {
+    // Copy page：优先复制渲染后的正文纯文本；失败就退回选中提示
+    var copyBtn = document.querySelector("[data-msp-copy]");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var article = document.querySelector(".md-content__inner");
+        var text = article ? article.innerText : "";
+        var done = function () {
+          var label = copyBtn.querySelector("span");
+          var old = label.textContent;
+          label.textContent = "Copied";
+          setTimeout(function () { label.textContent = old; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () {});
+        }
+      });
+    }
+
+    // Was this page helpful：只写 localStorage，不发请求（站点是纯静态的）
+    var box = document.querySelector("[data-msp-helpful]");
+    if (box) {
+      var key = "msp-helpful:" + location.pathname;
+      var thanks = box.querySelector(".msp-helpful__thanks");
+      if (localStorage.getItem(key)) { thanks.hidden = false; }
+      box.querySelectorAll("[data-msp-vote]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          localStorage.setItem(key, btn.getAttribute("data-msp-vote"));
+          thanks.hidden = false;
+        });
+      });
+    }
+  })();
+  </script>
+{% endblock %}

@@ -207,3 +207,155 @@ body {
   background-color: var(--md-primary-fg-color--light);
   border: 1px solid var(--md-typeset-table-color);
 }
+
+/* ── 对齐 modelcontextprotocol.io 的骨架 ─────────────────────── */
+
+/* 顶栏：左侧 logo，搜索框做成胶囊的输入感（Material 的搜索按钮本身就是输入框样式） */
+.md-header {
+  box-shadow: none;
+  border-bottom: 1px solid var(--md-typeset-table-color);
+}
+
+.md-header__title {
+  font-weight: 650;
+  font-size: 0.95rem;
+}
+
+/* 第二行 tab：下边框 + 选中项黑色下划线（MCP 就是这样） */
+.md-tabs {
+  border-bottom: 1px solid var(--md-typeset-table-color);
+}
+
+.md-tabs__link {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--md-default-fg-color--light);
+  opacity: 1;
+  padding-bottom: 0.55rem;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.md-tabs__link:hover { color: var(--md-default-fg-color); }
+
+.md-tabs__item--active .md-tabs__link,
+.md-tabs__link--active {
+  color: var(--md-default-fg-color);
+  font-weight: 650;
+  border-bottom-color: var(--md-default-fg-color);
+}
+
+/* 侧栏：分组标题小号大写字距；选中项是灰色胶囊 */
+.md-nav__item--nested > .md-nav__link,
+.md-nav--primary .md-nav__title {
+  color: var(--md-default-fg-color);
+  font-weight: 650;
+}
+
+.md-nav__link {
+  border-radius: 0.45rem;
+}
+
+.md-nav__link--active,
+.md-nav__item--active > .md-nav__link {
+  background-color: var(--md-primary-fg-color--light);
+  color: var(--md-default-fg-color);
+  font-weight: 650;
+}
+
+/* 面包屑（navigation.path） */
+.md-path {
+  font-size: 0.7rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* 标题行 + Copy page 按钮 */
+.msp-titlebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.msp-titlebar__main { min-width: 0; }
+
+.msp-titlebar .md-content__button { display: none; }  /* Material 自带的编辑/查看按钮让位 */
+
+.msp-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  margin-top: 0.35rem;
+  padding: 0.32rem 0.7rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--md-default-fg-color);
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-typeset-table-color);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.msp-copy:hover { border-color: var(--md-default-fg-color--lighter); }
+
+/* Was this page helpful? */
+.msp-helpful {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 2.4rem 0 0;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--md-typeset-table-color);
+  font-size: 0.74rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.msp-helpful__actions { display: inline-flex; gap: 0.4rem; }
+
+.msp-helpful button {
+  font: inherit;
+  padding: 0.18rem 0.7rem;
+  color: var(--md-default-fg-color);
+  background: transparent;
+  border: 1px solid var(--md-typeset-table-color);
+  border-radius: 0.45rem;
+  cursor: pointer;
+}
+
+.msp-helpful button:hover { background: var(--md-primary-fg-color--light); }
+
+.msp-helpful__thanks { color: var(--md-default-fg-color--light); }
+
+/* 上一页 / 下一页：带箭头的两侧布局 */
+.md-footer__inner { padding: 0.8rem 0; }
+
+.md-footer__link {
+  border-radius: 0.5rem;
+}
+
+.md-footer__title { font-size: 0.78rem; }
+
+/* 页脚：图标在左、版权居中 */
+.md-footer-meta {
+  background: var(--md-default-bg-color);
+  border-top: 1px solid var(--md-typeset-table-color);
+}
+
+.md-footer-meta__inner {
+  padding: 0.9rem 0;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.7rem;
+}
+
+.md-copyright {
+  color: var(--md-default-fg-color--light);
+  text-align: center;
+  width: 100%;
+}
+
+.md-copyright a { color: inherit; text-decoration: underline; }
+
+.md-social { margin: 0.3rem 0; }
+.md-social__link { color: var(--md-default-fg-color--light); }

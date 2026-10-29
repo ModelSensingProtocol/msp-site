@@ -6,9 +6,13 @@ site_dir: _docs
 
 theme:
   name: material
+  custom_dir: overrides
   language: en
   font: false            # 不拉 Google Fonts：用系统 Inter 回退，离线也正常
   features:
+    - navigation.tabs          # 第二行 tab 导航（对齐 MCP 的 Documentation/…）
+    - navigation.tabs.sticky
+    - navigation.path          # 面包屑
     - navigation.tracking
     - navigation.top
     - content.code.copy        # 代码块复制按钮
@@ -16,6 +20,7 @@ theme:
     - search.suggest
     - search.highlight
     - toc.follow
+    - search.share
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -33,14 +38,18 @@ theme:
         name: Switch to light
 
 nav:
-  - 文档首页: index.md
-  - 快速开始: intro.md
-  - 架构与概念: architecture.md
-  - 与 MCP 的区别: why-not-mcp.md
-  - 提供能力: provide-tools.md
-  - 发现、调用与订阅: consume.md
-  - FAQ 与排查: faq.md
-  - 术语表: glossary.md
+  - Documentation:
+      - 文档首页: index.md
+      - 快速开始: intro.md
+      - 架构与概念: architecture.md
+      - 与 MCP 的区别: why-not-mcp.md
+      - 提供能力: provide-tools.md
+      - 发现、调用与订阅: consume.md
+      - FAQ 与排查: faq.md
+      - 术语表: glossary.md
+  - Specification: https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md
+  - Implementations: https://github.com/ModelSensingProtocol/msp-ts
+  - Designs: https://github.com/hxh230802/MSP/tree/master/docs
 
 plugins:
   - search
@@ -58,6 +67,7 @@ plugins:
           name: English
           build: true
           nav_translations:
+            文档: Documentation
             文档首页: Home
             快速开始: Introduction
             架构与概念: Architecture & concepts
@@ -86,6 +96,18 @@ markdown_extensions:
 extra_css:
   - stylesheets/extra.css
 
+copyright: >
+  Copyright © MSP (Model Sensing Protocol) — an open protocol, MIT licensed.<br>
+  Site content is documentation, not a specification; the normative text lives in the repository.
+
 extra:
   version:
     provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ModelSensingProtocol/msp-site
+      name: Site source
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/msp-py/
+      name: msp-py on PyPI
+  generator: false

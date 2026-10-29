@@ -1,35 +1,35 @@
 ---
-sidebar_label: 下载节点：长任务 + 信号
+sidebar_label: "Downloader node: long-running task + signals"
 ---
 
-# 下载节点：长任务 + 信号
+# Downloader node: long-running task + signals
 
-`start_task` 立刻返回 `taskId`，进度与完成通过信号推送；`get_task` 供回查。这就是「长任务不必阻塞」的最小形态。
+`start_task` returns a `taskId` immediately; progress and completion arrive as signals; `get_task` is there for querying. This is the minimal shape of "a long-running task does not have to block".
 
-## 运行
+## Run
 
 ```bash
 PYTHONPATH=src python examples/downloader.py
 ```
 
-## 你会看到
+## What you will see
 
-打印已上线；被调用后每 0.2 秒发一条 `download.progress`，结束时发 `download.completed`。
+It prints that the node is online; once called, it sends a `download.progress` every 0.2 seconds, and `download.completed` at the end.
 
-## 代码
+## Code
 
-下载：<a href="../downloader.py" download><code>downloader.py</code></a>（Docusaurus 会把 md 里的静态文件链接改写成带 hash 的路径，而那个地址 404，所以这里用原生 a 标签指向真实文件）
+Download: <a href="../downloader.py" download><code>downloader.py</code></a> (Docusaurus rewrites static file links in md to hashed paths, and that address 404s, so a native a tag is used here to point at the real file)
 
 ```python
-"""示例 2：长任务节点。
+"""Example 2: a long-running task node.
 
     PYTHONPATH=src python examples/downloader.py
 
-它演示两件事：
-  - 用 task 模式暴露「有队列、可回查」的能力（start_task / get_task）
-  - 进度与完成通过**信号**推送，调用方不必轮询
+It shows two things:
+  - exposing "has a queue, can be queried" in task mode (start_task / get_task)
+  - progress and completion pushed as **signals**, so the caller need not poll
 
-真正的下载器只要把 time.sleep 换成实际 IO 即可。
+A real downloader only has to swap time.sleep for actual IO.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ import uuid
 
 from msp import MSPNode, Preset
 
-# 想隔离演示环境就设 MSP_NODES_DIR（默认 ~/.msp/nodes）
+# Set MSP_NODES_DIR to isolate the demo environment (default ~/.msp/nodes)
 NODES_DIR = os.environ.get("MSP_NODES_DIR", "~/.msp/nodes")
 
 TASKS: dict[str, dict] = {}
@@ -49,10 +49,10 @@ TASKS: dict[str, dict] = {}
 
 def main() -> None:
     node = MSPNode("downloader", preset=Preset.LOCAL_TOOL, nodes_dir=NODES_DIR)
-    node.declare_signal("download.progress", description="下载进度")
-    node.declare_signal("download.completed", description="下载完成")
+    node.declare_signal("download.progress", description="download progress")
+    node.declare_signal("download.completed", description="download completed")
 
-    @node.tool("start_task", "开始一个下载任务，立刻返回 taskId")
+    @node.tool("start_task", "Start a download task, returns taskId immediately")
     def start_task(url: str, size_mb: int = 5) -> dict:
         task_id = uuid.uuid4().hex[:8]
         TASKS[task_id] = {"taskId": task_id, "url": url, "state": "running", "progress": 0}
@@ -72,26 +72,26 @@ def main() -> None:
         threading.Thread(target=work, daemon=True, name=f"task-{task_id}").start()
         return TASKS[task_id]
 
-    @node.tool("get_task", "按 taskId 回查任务状态")
+    @node.tool("get_task", "Query task state by taskId")
     def get_task(taskId: str) -> dict:
         return TASKS.get(taskId, {"taskId": taskId, "state": "unknown"})
 
     node.start()
-    print("[downloader] 已上线：start_task / get_task + download.progress/completed 信号")
-    print("[downloader] Ctrl+C 退出")
+    print("[downloader] online: start_task / get_task + download.progress/completed signals")
+    print("[downloader] Ctrl+C to exit")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         node.stop()
-        print("\n[downloader] 已下线")
+        print("\n[downloader] offline")
 
 
 if __name__ == "__main__":
     main()
 ```
 
-## 值得注意
+## Worth noting
 
-- 真实下载器把 `time.sleep` 换成实际 IO 即可，其余部分不用动。
-- 信号是发完即忘的：订阅者离线期间发出的那条就丢了，所以状态要能 `get_task` 回查。
+- A real downloader only swaps `time.sleep` for actual IO; the rest needs no change.
+- Signals are fire-and-forget: anything published while a subscriber is offline is lost, so state has to be recoverable through `get_task`.

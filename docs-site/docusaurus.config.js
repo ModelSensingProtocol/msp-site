@@ -15,7 +15,7 @@ const { themes } = require("prism-react-renderer");
  */
 module.exports = {
   title: "MSP",
-  tagline: "本地软件是邻居，不是插座",
+  tagline: "Local software is a neighbour, not a socket",
   url: "https://modelsensingprotocol.github.io",
   baseUrl: "/msp-site/docs/",
   trailingSlash: true,
@@ -24,11 +24,11 @@ module.exports = {
   favicon: "favicon.png",
 
   i18n: {
-    defaultLocale: "zh-CN",
-    locales: ["zh-CN", "en"],
+    defaultLocale: "en",
+    locales: ["en", "zh"],
     localeConfigs: {
-      "zh-CN": { label: "中文", htmlLang: "zh-CN" },
       en: { label: "English", htmlLang: "en" },
+      zh: { label: "中文", htmlLang: "zh-CN" },
     },
   },
 
@@ -43,7 +43,7 @@ module.exports = {
           // 有版本快照后，当前 docs/ 是「下一版」；默认展示最新已发布版本
           lastVersion: "2026-10-10",
           versions: {
-            current: { label: "下一版", path: "next" },
+            current: { label: "Next", path: "next" },
             "2026-10-10": { label: "2026-10-10", banner: "none" },
           },
         },
@@ -75,10 +75,10 @@ module.exports = {
       title: "MSP",
       logo: { alt: "MSP", src: "favicon.png" },
       items: [
-        { type: "docSidebar", sidebarId: "main", label: "文档", position: "left" },
-        { type: "docSidebar", docsPluginId: "spec", sidebarId: "main", label: "规范", position: "left" },
-        { type: "docSidebar", docsPluginId: "impl", sidebarId: "main", label: "实现", position: "left" },
-        { type: "docSidebar", docsPluginId: "design", sidebarId: "main", label: "设计", position: "left" },
+        { type: "docSidebar", sidebarId: "main", label: "Docs", position: "left" },
+        { type: "docSidebar", docsPluginId: "spec", sidebarId: "main", label: "Specification", position: "left" },
+        { type: "docSidebar", docsPluginId: "impl", sidebarId: "main", label: "Implementations", position: "left" },
+        { type: "docSidebar", docsPluginId: "design", sidebarId: "main", label: "Design", position: "left" },
         { type: "docsVersionDropdown", position: "right" },
         { type: "localeDropdown", position: "right" },
         { href: "https://github.com/ModelSensingProtocol/msp-site", label: "GitHub", position: "right" },
@@ -87,7 +87,7 @@ module.exports = {
     footer: {
       style: "light",
       links: [],
-      copyright: `Copyright © MSP — Model Sensing Protocol，MIT 许可 · 本站是文档，不是规范；规范性文本在仓库里。`,
+      copyright: `Copyright © MSP — Model Sensing Protocol. MIT licensed. This site is documentation, not the specification; the normative text lives in the repository.`,
     },
     prism: {
       theme: themes.github,

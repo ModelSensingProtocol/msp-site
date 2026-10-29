@@ -1,0 +1,30 @@
+{
+  "title": {
+    "message": "MSP",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "MSP",
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Docs": {
+    "message": "文档",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.Specification": {
+    "message": "规范",
+    "description": "Navbar item with label Specification"
+  },
+  "item.label.Implementations": {
+    "message": "实现",
+    "description": "Navbar item with label Implementations"
+  },
+  "item.label.Design": {
+    "message": "设计",
+    "description": "Navbar item with label Design"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

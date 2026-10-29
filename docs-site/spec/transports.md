@@ -1,47 +1,47 @@
-# 传输层 — Transports
+# Transports
 
 | | |
 |---|---|
-| **协议修订** | `2026-10-10` |
-| **状态标记** | ✅ 已实现（TCP / WebSocket / UDS）；🔵 规划中（QUIC） |
-| **本页定义** | 传输层的字节搬运契约（`Transport` / `Connection` / `ConnectionClosed`）、后端注册与选择（`TransportRegistry`）、各后端的分帧格式与地址格式，以及 QUIC 的完整规划条文。 |
+| **Protocol revision** | `2026-10-10` |
+| **Status markers** | ✅ implemented (TCP / WebSocket / UDS); 🔵 planned (QUIC) |
+| **Defined on this page** | The byte-moving contract of the transport layer (`Transport` / `Connection` / `ConnectionClosed`), backend registration and selection (`TransportRegistry`), the framing and address formats of each backend, and the complete normative provisions for QUIC. |
 
-## 1. 概述
+## 1. Overview
 
-传输层是 MSP 的最底层：它**只搬运字节**。它建立连接、收发字节、处理分帧，除此之外什么都不知道——不解析 `Signal`、不参与握手语义、不检查能力清单、不知道对端 `node_id`。这一分工是硬边界：一旦传输层开始理解消息语义，新增后端就要重实现一遍协议逻辑，层的可替换性随之消失（理由见[设计文档](/design)）。
+The transport layer is the lowest layer of MSP: it **only moves bytes**. It establishes connections, sends and receives bytes, and handles framing — nothing else. It does not parse `Signal`, does not take part in handshake semantics, does not inspect the capability manifest, and does not know the peer's `node_id`. This division of labour is a hard boundary: once the transport layer starts understanding message semantics, a new backend has to reimplement the protocol logic all over again, and the layer's replaceability disappears (for the reasoning see [the design document](/design)).
 
-| 角色 | 定义位置 | 职责 |
+| Role | Defined in | Responsibility |
 |---|---|---|
-| `Connection` | [base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) | 一条已建立的连接：`send(bytes)` / `receive() -> bytes` / `close()` |
-| `ConnectionClosed` | 同上 | 「这条连接不能再用」的信号 |
-| `Transport` | 同上 | 一种传输协议的后端：`listen` / `accept` / `connect` / `close` |
-| `TransportRegistry` | [registry.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/registry.py) | 后端表，按 `Endpoint.transport_type` 选择后端 |
+| `Connection` | [base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) | One established connection: `send(bytes)` / `receive() -> bytes` / `close()` |
+| `ConnectionClosed` | same as above | The signal that "this connection can no longer be used" |
+| `Transport` | same as above | The backend of one transport protocol: `listen` / `accept` / `connect` / `close` |
+| `TransportRegistry` | [registry.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/registry.py) | Backend table; selects a backend by `Endpoint.transport_type` |
 
-| `transport_type` | 实现 | 地址形态 | 状态 |
+| `transport_type` | Implementation | Address form | Status |
 |---|---|---|---|
-| `tcp` | [tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) | `{"host": str, "port": int}` | ✅ 已实现 |
-| `websocket` | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) | `{"url": "ws://host:port/path"}` | ✅ 已实现 |
-| `uds` | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) | `{"path": "/path/to.sock"}` | ✅ 已实现（仅 Linux/macOS） |
-| `quic` | 无 | `{"host": str, "port": int, …}`（见 §3.6） | 🔵 规划中 |
+| `tcp` | [tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) | `{"host": str, "port": int}` | ✅ implemented |
+| `websocket` | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) | `{"url": "ws://host:port/path"}` | ✅ implemented |
+| `uds` | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) | `{"path": "/path/to.sock"}` | ✅ implemented (Linux/macOS only) |
+| `quic` | none | `{"host": str, "port": int, …}` (see §3.6) | 🔵 planned |
 
-传输层与「发现 / 宣告」的关系见 [discovery.md](./discovery.md)：那一层产出 `Endpoint`，本层消费其 `transport_type` 与 `address`。
+The relationship between the transport layer and discovery / presence is described in [discovery.md](./discovery.md): that layer produces `Endpoint`, and this layer consumes its `transport_type` and `address`.
 
-## 2. 契约
+## 2. Contract
 
 ### 2.1 `Connection`
 
 ```
 send(data: bytes) -> None
 receive() -> bytes
-close() -> None            # 幂等
+close() -> None            # idempotent
 ```
 
-- `send(data)` **必须**把 `data` 作为**一条完整消息**发出，分帧细节（长度前缀、帧头）由实现处理。
-- `receive()` **必须**返回**恰好一条**完整消息的负载，**不得**返回长度前缀或帧头，**不得**把两条相邻消息粘在一起返回。
-- `receive()` 是阻塞调用：无数据时**必须**等待，**不得**返回 `b""` 表示「暂无数据」。空字节串 `b""` 是一条**合法消息**（零长负载），不是错误信号。
-- 连接不可再用时（对端关闭、本端已关闭、OS 层错误、帧长超限），`send` / `receive` **必须**抛出 `ConnectionClosed`；实现**应当**在抛出前尽力关闭底层 socket。
-- `close()` **必须**幂等：重复调用不报错、不抛异常。
-- `send` **应当**可被多个线程并发调用（参考实现用 `_send_lock` 保证单条消息的字节不被交错）。`receive()` **不**保证并发安全：**不得**在多个线程中同时 `receive()` 同一条 `Connection`。
+- `send(data)` **MUST** send `data` as **one complete message**; framing details (length prefix, frame header) are handled by the implementation.
+- `receive()` **MUST** return the payload of **exactly one** complete message, **MUST NOT** return the length prefix or frame header, and **MUST NOT** glue two adjacent messages together.
+- `receive()` is a blocking call: when there is no data it **MUST** wait, and **MUST NOT** return `b""` to mean "no data yet". The empty byte string `b""` is a **valid message** (zero-length payload), not an error signal.
+- When the connection can no longer be used (peer closed, local end closed, OS-level error, frame length over the limit), `send` / `receive` **MUST** raise `ConnectionClosed`; the implementation **SHOULD** make a best effort to close the underlying socket before raising.
+- `close()` **MUST** be idempotent: repeated calls raise no error and throw no exception.
+- `send` **SHOULD** be safe to call concurrently from multiple threads (the reference implementation uses `_send_lock` so that the bytes of a single message are not interleaved). `receive()` does **not** guarantee concurrency safety: **MUST NOT** call `receive()` on the same `Connection` from several threads at the same time.
 
 ### 2.2 `Transport`
 
@@ -49,10 +49,10 @@ close() -> None            # 幂等
 listen(address: dict) -> dict
 accept() -> Connection
 connect(address: dict) -> Connection
-close() -> None            # 幂等
+close() -> None            # idempotent
 ```
 
-- `listen(address)` **必须**开始监听并返回实际生效的地址，形态固定为：
+- `listen(address)` **MUST** start listening and return the address actually in effect, always in this form:
 
 ```json
 {
@@ -61,90 +61,90 @@ close() -> None            # 幂等
 }
 ```
 
-  注意这不是 `Endpoint`：它没有 `node_id`，且外层多一个 `transport_type` 键。节点用法是取 `info["address"]` 去构造 `Endpoint`。
-- `listen({})` **必须**可用：`TransportRegistry.listen_all()` 恒以空字典调用 `listen`，因此每个后端**必须**为 `host` / `port` / `path` 定义默认值。返回的地址**应当**与输入不同（`port=0` 时返回内核分配的真实端口）。
-- `accept()` **必须**阻塞直到有一条入站连接到达，调用方在独立线程或协程中循环调用它；`listen()` 之前调用**必须**抛 `RuntimeError`。
-- `connect(address)` 失败时**必须**抛 `ConnectionError`，**不得**抛 `ConnectionClosed`（前者表示「没连上」，后者表示「连上了又断了」）。连接超时**应当**有默认值（参考实现为 10 s），**不得**无限等待。
-- `accept()` **不得**执行 MSP 层握手（HELLO/ACK 属于协议层）。唯一例外是 WebSocket 的 **HTTP Upgrade 握手**——那是传输层自身的帧协商。
-- `close()` **必须**幂等并释放监听资源。参考实现**未**规定它是否唤醒另一个线程中阻塞的 `accept()`；**不得**依赖该行为（见 §9）。
+  Note that this is not an `Endpoint`: it has no `node_id`, and the outer object carries an extra `transport_type` key. A node takes `info["address"]` to construct an `Endpoint`.
+- `listen({})` **MUST** work: `TransportRegistry.listen_all()` always calls `listen` with an empty dictionary, so every backend **MUST** define defaults for `host` / `port` / `path`. The returned address **SHOULD** differ from the input (with `port=0` it returns the real port assigned by the kernel).
+- `accept()` **MUST** block until an inbound connection arrives; the caller loops on it in a dedicated thread or coroutine. Calling it before `listen()` **MUST** raise `RuntimeError`.
+- `connect(address)` **MUST** raise `ConnectionError` on failure and **MUST NOT** raise `ConnectionClosed` (the former means "did not connect", the latter means "connected and then dropped"). The connect timeout **SHOULD** have a default (10 s in the reference implementation) and **MUST NOT** wait indefinitely.
+- `accept()` **MUST NOT** perform the MSP-layer handshake (HELLO/ACK belong to the protocol layer). The only exception is the WebSocket **HTTP Upgrade handshake** — that is the transport layer's own frame negotiation.
+- `close()` **MUST** be idempotent and release the listening resources. The reference implementation does **not** specify whether it wakes a blocked `accept()` in another thread; **MUST NOT** rely on that behaviour (see §9).
 
 ### 2.3 `TransportRegistry`
 
-| 方法 | 语义 |
+| Method | Semantics |
 |---|---|
-| `register(transport_type, transport)` | 注册后端；同一 `transport_type` 重复注册时后注册者生效 |
-| `has` / `get` | 查询是否已注册 / 取后端 |
-| `items()` | 迭代 `(transport_type, transport)` |
-| `listen_all() -> dict` | 按注册顺序对所有后端调用 `listen({})`，返回 `{transport_type: 监听信息}` |
-| `connect(endpoint) -> Connection` | 按 `endpoint.transport_type` 选后端，调用 `transport.connect(endpoint.address)` |
-| `close_all() -> None` | 逐个关闭后端；单个后端抛错被吞掉并记 debug 日志，**不得**中断其余后端 |
+| `register(transport_type, transport)` | Register a backend; when the same `transport_type` is registered again, the later registration wins |
+| `has` / `get` | Check whether a backend is registered / fetch a backend |
+| `items()` | Iterate `(transport_type, transport)` |
+| `listen_all() -> dict` | Call `listen({})` on every backend in registration order, returning `{transport_type: listen info}` |
+| `connect(endpoint) -> Connection` | Select the backend by `endpoint.transport_type` and call `transport.connect(endpoint.address)` |
+| `close_all() -> None` | Close the backends one by one; an error from a single backend is swallowed and logged at debug level, and **MUST NOT** abort the remaining backends |
 
-- **后端选择规则**：`Endpoint.transport_type` **必须**精确匹配 `register` 时使用的键（区分大小写）；无匹配时**必须**抛 `UnsupportedTransport`，错误消息**应当**列出当前已注册的全部类型。
-- Registry **不**校验地址与后端是否匹配：`transport_type` 为 `tcp` 而 `address` 缺 `host` 时，错误来自后端（`KeyError`），不是 Registry。
-- 节点对外宣告的端点**只有** `Preset.primary_transport` 一个；其余后端照常 `listen`，但地址**不**进任何声明文件。因此「一个节点多后端」当前只在被连接方有意义，对端无从得知次要地址。
-- Registry **不**感知消息语义、**不**持有 `Connection`：连接的生命周期归协议层。
+- **Backend selection rule**: `Endpoint.transport_type` **MUST** exactly match the key used at `register` time (case-sensitive); when nothing matches it **MUST** raise `UnsupportedTransport`, and the error message **SHOULD** list every currently registered type.
+- The registry does **not** validate that the address matches the backend: with `transport_type` `tcp` and an `address` missing `host`, the error comes from the backend (`KeyError`), not from the registry.
+- A node announces **only** one endpoint to the outside, namely `Preset.primary_transport`; the other backends still `listen` as usual, but their addresses do **not** go into any declaration file. So "one node, many backends" is currently meaningful only on the side being connected to; the peer has no way to learn the secondary addresses.
+- The registry does **not** understand message semantics and does **not** hold `Connection` objects: the connection lifecycle belongs to the protocol layer.
 
-## 3. 报文与格式
+## 3. Messages and formats
 
-### 3.1 分帧
+### 3.1 Framing
 
-TCP 与 UDS 都是字节流，没有消息边界，因此共用同一套长度前缀分帧；UDS 直接复用 `TCPConnection`，与 TCP 逐字节一致。WebSocket 自带帧边界，不使用本节格式（见 §3.5）。
+TCP and UDS are both byte streams without message boundaries, so they share the same length-prefix framing; UDS reuses `TCPConnection` directly and is byte-for-byte identical to TCP. WebSocket has its own frame boundaries and does not use this section's format (see §3.5).
 
 ```
  0        1        2        3        4                      4+N
  +--------+--------+--------+--------+----------------------+
- | len[0] | len[1] | len[2] | len[3] |  payload（N = len）  |
+ | len[0] | len[1] | len[2] | len[3] |  payload (N = len)   |
  +--------+--------+--------+--------+----------------------+
- |<------- 4 字节大端无符号长度 ---->|<----- N 字节负载 --->|
+ |<--- 4-byte big-endian length ---->|<-- N-byte payload -->|
 ```
 
-- **字节序**：大端（网络字节序），`len.to_bytes(4, "big")` / `int.from_bytes(header, "big")`。**不得**使用小端。
-- **长度语义**：`len` = 负载字节数，**不包含** 4 字节头自身；整帧长度恒为 `4 + len`。
-- **上限**：`MAX_MESSAGE_SIZE = 16 * 1024 * 1024`（16 MiB = 16777216 字节）。接收侧读到 `len > 16777216` 时**必须**关闭连接并抛 `ConnectionClosed`（防「对端声明超大长度导致内存耗尽」）。`len == 16777216` 合法。
-- **零长帧**：`len == 0` 时接收侧直接返回 `b""`，不再读取负载字节；上层**必须**能接受一条空负载的消息。
-- **粘包**：发送侧一次 `sendall(header + payload)`，接收侧按长度切分；先后到达的多个帧依次返回，**不得**合并。
-- **半包**：接收侧循环 `recv` 直到凑满所需字节数（`_recv_exact`）。头部不足 4 字节或负载不足 `len` 字节时**必须**继续阻塞等待，**不得**按「已收到的部分」返回。
-- **写入互斥**：发送侧加锁，保证一条消息的字节连续写入，不与另一条消息交错。
-- **不对称**：上限检查只在接收侧执行。发送侧**不**校验 `len`，超过 16 MiB 的消息会被对端以 `ConnectionClosed` 断开。
+- **Byte order**: big-endian (network byte order), `len.to_bytes(4, "big")` / `int.from_bytes(header, "big")`. **MUST NOT** use little-endian.
+- **Length semantics**: `len` = number of payload bytes, **not** including the 4-byte header itself; the total frame length is always `4 + len`.
+- **Limit**: `MAX_MESSAGE_SIZE = 16 * 1024 * 1024` (16 MiB = 16777216 bytes). When the receiving side reads `len > 16777216` it **MUST** close the connection and raise `ConnectionClosed` (to prevent "a peer declaring a huge length to exhaust memory"). `len == 16777216` is valid.
+- **Zero-length frame**: when `len == 0` the receiving side returns `b""` directly without reading any payload bytes; the upper layer **MUST** accept a message with an empty payload.
+- **Coalescing**: the sending side issues one `sendall(header + payload)` and the receiving side splits by length; frames that arrive back to back are returned one after another and **MUST NOT** be merged.
+- **Partial frames**: the receiving side loops on `recv` until it has the required number of bytes (`_recv_exact`). When fewer than 4 header bytes or fewer than `len` payload bytes have arrived it **MUST** keep blocking and **MUST NOT** return the bytes received so far.
+- **Write mutual exclusion**: the sending side takes a lock so that one message's bytes are written contiguously and are not interleaved with another message's.
+- **Asymmetry**: the limit check runs on the receiving side only. The sending side does **not** validate `len`; a message above 16 MiB is disconnected by the peer with `ConnectionClosed`.
 
-### 3.2 地址格式
+### 3.2 Address formats
 
-| `transport_type` | `listen` 输入键（默认值） | `address` 对外形态 | 出站连接要求 |
+| `transport_type` | `listen` input keys (defaults) | External `address` form | Outbound connection requirement |
 |---|---|---|---|
-| `tcp` | `host`（`"127.0.0.1"`）、`port`（`0`） | `{"host": str, "port": int}` | `host` 与 `port` **必须**存在 |
-| `websocket` | `host`（`"127.0.0.1"`）、`port`（`0`）、`path`（`"/msp"`） | `{"url": "ws://<host>:<port><path>"}` | `url` **必须**存在且以 `ws://` 开头 |
-| `uds` | `path`（`<tempdir>/msp-<pid>-<8 位十六进制>.sock`） | `{"path": str}` | `path` **必须**存在 |
-| `quic` | 见 §3.6 | 见 §3.6 | 见 §3.6 |
+| `tcp` | `host` (`"127.0.0.1"`), `port` (`0`) | `{"host": str, "port": int}` | `host` and `port` **MUST** be present |
+| `websocket` | `host` (`"127.0.0.1"`), `port` (`0`), `path` (`"/msp"`) | `{"url": "ws://<host>:<port><path>"}` | `url` **MUST** be present and start with `ws://` |
+| `uds` | `path` (`<tempdir>/msp-<pid>-<8 hex digits>.sock`) | `{"path": str}` | `path` **MUST** be present |
+| `quic` | see §3.6 | see §3.6 | see §3.6 |
 
-TCP 监听参数：建 socket 时设置 `SO_REUSEADDR`，`listen(128)`，监听地址取 `getsockname()` 的实际结果。地址族固定为 `AF_INET`，**不**支持 IPv6 字面量（`::1` 会因族不匹配失败）。WebSocket 监听参数见 §3.4，UDS 见 §3.3。
+TCP listening parameters: `SO_REUSEADDR` is set when the socket is created, `listen(128)` is called, and the listening address is taken from the actual result of `getsockname()`. The address family is fixed to `AF_INET`; IPv6 literals are **not** supported (`::1` fails on a family mismatch). WebSocket listening parameters are in §3.4, UDS in §3.3.
 
-TCP/UDS 的 `connect` 超时默认 **10 s**，且**不**经 `address` 字典暴露——`TransportRegistry.connect` 只传 `endpoint.address`，调用方**不得**指望通过地址字段调整超时。连接成功后 socket 被设回阻塞模式（读循环需要）。
+The `connect` timeout for TCP/UDS defaults to **10 s** and is **not** exposed through the `address` dictionary — `TransportRegistry.connect` passes only `endpoint.address`, so the caller **MUST NOT** expect to adjust the timeout through address fields. On a successful connection the socket is switched back to blocking mode (the read loop needs it).
 
-### 3.3 UDS：平台限制、权限与残留清理
+### 3.3 UDS: platform limits, permissions and stale-socket cleanup
 
-- **平台限制**：Unix Domain Socket 仅 Linux/macOS 可用。Windows 的 CPython **未**暴露 `socket.AF_UNIX`，`listen()` / `connect()` 在进入任何 socket 调用之前就抛 `RuntimeError`（消息指明「Unix Domain Socket 仅 Linux/macOS 可用」并指向改用 TCP）。实现**不得**在无 `AF_UNIX` 的平台静默降级为别的传输：降级会改变声明里的 `transport_type` 与地址形态，对端无从得知。
-- **默认 socket 路径规则**：`os.path.join(tempfile.gettempdir(), f"msp-{os.getpid()}-{os.urandom(4).hex()}.sock")`，即 `<tempdir>/msp-<pid>-<8 位十六进制>.sock`；`address` **可以**显式指定 `path`。`listen` 返回 `{"transport_type": "uds", "address": {"path": <实际路径>}}`。地址就是文件系统路径，因此与共享目录发现天然契合（见 [discovery.md](./discovery.md)）。
-- **权限**：`bind` 之后**必须** `chmod(path, 0o600)`，使 socket 只对本用户可连。`chmod` 失败被忽略（只读文件系统等场景下无害），但**不得**因此放宽权限。
-- **残留 socket 文件清理**：进程崩溃后 socket 文件不会被内核删除，直接 `bind` 会因路径已存在而失败。因此 `listen()` **必须**在 `bind` 之前清理残留：`os.stat(path)` 成功**且** `stat.S_ISSOCK(mode)` 为真时才 `os.unlink(path)`；**不得**删除非 socket 文件（防误删用户数据）。
-- **close 语义**：`close()` **必须**幂等；关闭监听 socket 后 unlink 自己记录的路径并清空记录。因此在同一路径上重新监听是常态操作（[test_uds.py](https://github.com/hxh230802/MSP/blob/master/tests/test_uds.py) 覆盖该行为）。
-- **分帧**：与 TCP 逐字节相同（§3.1），参考实现直接复用 `TCPConnection`，**不**引入第二套分帧逻辑。
-- **连接超时**：`connect` 默认 10 s；`AF_UNIX` 连接通常立即完成，超时只用于兜底。
+- **Platform limit**: Unix domain sockets are available on Linux/macOS only. CPython on Windows does **not** expose `socket.AF_UNIX`, and `listen()` / `connect()` raise `RuntimeError` before any socket call is made (the message states that Unix domain sockets are available on Linux/macOS only and points at switching to TCP). An implementation **MUST NOT** silently fall back to another transport on a platform without `AF_UNIX`: a fallback would change the `transport_type` and the address form in the declaration, and the peer would have no way to know.
+- **Default socket path rule**: `os.path.join(tempfile.gettempdir(), f"msp-{os.getpid()}-{os.urandom(4).hex()}.sock")`, i.e. `<tempdir>/msp-<pid>-<8 hex digits>.sock`; `address` **MAY** specify `path` explicitly. `listen` returns `{"transport_type": "uds", "address": {"path": <actual path>}}`. The address is a filesystem path, so it fits naturally with shared-directory discovery (see [discovery.md](./discovery.md)).
+- **Permissions**: after `bind` it **MUST** run `chmod(path, 0o600)` so that the socket is connectable only by this user. A `chmod` failure is ignored (harmless on read-only filesystems and similar), but permissions **MUST NOT** be relaxed because of it.
+- **Stale socket file cleanup**: after a process crashes the kernel does not delete the socket file, and a plain `bind` fails because the path already exists. So `listen()` **MUST** clean up stale files before `bind`: `os.unlink(path)` only when `os.stat(path)` succeeds **and** `stat.S_ISSOCK(mode)` is true; **MUST NOT** delete non-socket files (to avoid destroying user data).
+- **close semantics**: `close()` **MUST** be idempotent; after closing the listening socket it unlinks the path it recorded and clears the record. Re-listening on the same path is therefore a routine operation ([test_uds.py](https://github.com/hxh230802/MSP/blob/master/tests/test_uds.py) covers this behaviour).
+- **Framing**: byte-for-byte identical to TCP (§3.1); the reference implementation reuses `TCPConnection` directly and does **not** introduce a second framing implementation.
+- **Connect timeout**: `connect` defaults to 10 s; an `AF_UNIX` connection usually completes immediately, so the timeout is only a backstop.
 
-### 3.4 WebSocket 握手（RFC 6455 子集）
+### 3.4 WebSocket handshake (RFC 6455 subset)
 
-客户端请求（逐字）：
+Client request (verbatim):
 
 ```
 GET /msp HTTP/1.1
 Host: 127.0.0.1:45678
 Upgrade: websocket
 Connection: Upgrade
-Sec-WebSocket-Key: <base64(16 随机字节)>
+Sec-WebSocket-Key: <base64(16 random bytes)>
 Sec-WebSocket-Version: 13
 
 ```
 
-服务端应答（逐字，`accept = base64(SHA1(key + GUID))`）：
+Server response (verbatim, `accept = base64(SHA1(key + GUID))`):
 
 ```
 HTTP/1.1 101 Switching Protocols
@@ -154,42 +154,42 @@ Sec-WebSocket-Accept: <accept>
 
 ```
 
-- 握手魔数 `GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"`。
-- 客户端**必须**校验状态行含 ` 101 `，并**必须**校验 `Sec-WebSocket-Accept` 等于自己算出的值；不符时抛 `ConnectionError`。
-- 服务端**必须**要求存在 `Sec-WebSocket-Key`，缺失时抛 `ConnectionError`；参考实现**不**校验请求方法与路径，也**不**校验 `Sec-WebSocket-Version`（见 §9）。
-- HTTP 头读取上限 **64 KiB**，超出抛 `ConnectionError`；读取中遇 EOF 抛 `ConnectionClosed`。
-- 握手时可能多读到首帧字节，实现**必须**缓存这部分字节供随后的 `receive()` 优先消费，**不得**丢弃（否则丢首帧）。
+- The handshake magic value is `GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"`.
+- The client **MUST** verify that the status line contains ` 101 ` and **MUST** verify that `Sec-WebSocket-Accept` equals the value it computed itself; a mismatch raises `ConnectionError`.
+- The server **MUST** require `Sec-WebSocket-Key` and raises `ConnectionError` when it is absent; the reference implementation does **not** validate the request method or path, nor `Sec-WebSocket-Version` (see §9).
+- The HTTP header read limit is **64 KiB**, exceeding it raises `ConnectionError`, and EOF during the read raises `ConnectionClosed`.
+- The handshake may read bytes of the first frame; the implementation **MUST** buffer those bytes for the subsequent `receive()` to consume first and **MUST NOT** discard them (otherwise the first frame is lost).
 
-### 3.5 WebSocket 帧
+### 3.5 WebSocket frames
 
 ```
  0                   1                   2                   3
  +-+-+-+-+-------+-+-------------+-------------------------------+
  |F|R|R|R|opcode |M| Payload len |  Extended payload length ...  |
- |I|S|S|S| (4b)  |A|     (7b)    |  (16/64b, 仅当 len=126/127)   |
+ |I|S|S|S| (4b)  |A|     (7b)    |  (16/64b, len=126/127 only)   |
  |N|V|V|V|       |S|             |                               |
  +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
- |  Masking key（4 字节，仅当 MASK=1）  |       Payload data ...   |
+ |  Masking key (4B when MASK=1) |       Payload data ...        |
  +---------------------------------------------------------------+
 ```
 
-- 发送侧只发**二进制帧**（`FIN=1`，`opcode=0x2`）。
-- 长度编码：`len < 126` 直接写 7 位；`126 <= len < 65536` 写 `126` + 2 字节大端；否则写 `127` + 8 字节大端。
-- **掩码**：客户端发出的帧**必须**带掩码（`MASK=1`，4 字节随机 key，负载按 `key[i % 4]` 异或）；服务端发出的帧**必须**不带掩码。接收侧按帧头 `MASK` 位决定是否解掩码。
-- **分片**：`FIN=0` 的 `0x1`/`0x2` 帧开启分片缓冲，后续 `opcode=0x0`（continuation）帧追加，直到 `FIN=1` 才把整条消息返回给上层；孤立的 continuation **应当**被忽略。
-- **控制帧**在 `receive()` 内部消化、**不得**返回给上层：`0x8`（close）→ 尽力回一个 close 帧后抛 `ConnectionClosed`；`0x9`（ping）→ 原样回 `pong`（`0xA`）后继续读；`0xA`（pong）→ 忽略。未知 opcode **应当**忽略而非断开。
-- **上限**：`MAX_MESSAGE_SIZE = 16 * 1024 * 1024`，但校验发生在**单帧**长度上；分片重组后的**总长没有上限**（见 §9）。
-- **文本帧**：`0x1` 帧的负载被当作一条消息原样返回（**不**做 UTF-8 校验、**不**转码）；实现**不应当**依赖文本帧语义。
-- **与 TCP 的差异**：① 消息边界由帧提供，无需长度前缀；② 有对称的 ping/pong 与 close 帧（TCP/UDS 没有，只能靠上层心跳）；③ 有 HTTP Upgrade 握手与 64 KiB 头上限；④ 服务端与客户端发送行为不对称（掩码）。**共同点**：都是有序可靠的字节流语义，`Connection` 接口完全一致，`receive()` 都不以 `b""` 表示「暂无数据」。
+- The sending side sends **binary frames** only (`FIN=1`, `opcode=0x2`).
+- Length encoding: `len < 126` writes the 7-bit value directly; `126 <= len < 65536` writes `126` + 2 bytes big-endian; otherwise `127` + 8 bytes big-endian.
+- **Masking**: frames sent by the client **MUST** be masked (`MASK=1`, a 4-byte random key, payload XORed with `key[i % 4]`); frames sent by the server **MUST NOT** be masked. The receiving side decides whether to unmask from the `MASK` bit in the frame header.
+- **Fragmentation**: a `0x1`/`0x2` frame with `FIN=0` opens a fragment buffer, subsequent `opcode=0x0` (continuation) frames append to it, and the whole message is returned to the upper layer only at `FIN=1`; an orphan continuation **SHOULD** be ignored.
+- **Control frames** are consumed inside `receive()` and **MUST NOT** be returned to the upper layer: `0x8` (close) → send a close frame back on a best-effort basis, then raise `ConnectionClosed`; `0x9` (ping) → reply with `pong` (`0xA`) echoing the payload, then continue reading; `0xA` (pong) → ignore. An unknown opcode **SHOULD** be ignored rather than disconnect.
+- **Limit**: `MAX_MESSAGE_SIZE = 16 * 1024 * 1024`, but the check applies to the **single-frame** length; the **total length after fragment reassembly has no limit** (see §9).
+- **Text frames**: the payload of a `0x1` frame is returned as a message as-is (**no** UTF-8 validation, **no** transcoding); an implementation **SHOULD NOT** rely on text-frame semantics.
+- **Differences from TCP**: ① message boundaries come from frames, so no length prefix is needed; ② there are symmetric ping/pong and close frames (TCP/UDS have none and can rely only on an upper-layer heartbeat); ③ there is an HTTP Upgrade handshake with a 64 KiB header limit; ④ server and client sending behaviour is asymmetric (masking). **In common**: both have ordered, reliable byte-stream semantics, the `Connection` interface is identical, and neither uses `b""` in `receive()` to mean "no data yet".
 
-### 3.6 QUIC（🔵 规划中）
+### 3.6 QUIC (🔵 planned)
 
-**实现者可以不实现，但一旦实现**必须**符合本条。**
+An implementer **MAY** leave this unimplemented, but once implemented it **MUST** conform to this provision.
 
-- **`transport_type`**：`"quic"`，注册进 `TransportRegistry`（与 [core/node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) 中预留的 `# "quic": QUICTransport` 一致）。
-- **版本 / ALPN**：**必须**使用 QUIC v1（RFC 9000），ALPN 为 `"msp/1"`；**不得**复用 HTTP/3 的 `"h3"`。
-- **1-RTT 与 0-RTT**：首次连接**必须**走完整 1-RTT 握手（TLS 1.3）。客户端缓存到有效 session ticket 后**可以**用 **0-RTT early data** 把首条 MSP 消息随 ClientHello 发出。0-RTT 数据**必须**满足幂等要求——**不得**把 `tool_call` 这类有副作用的信号放进 0-RTT，**应当**只放 `hello`。服务端拒绝 0-RTT 时，客户端**必须**回退到 1-RTT 重发，**不得**把「0-RTT 被拒」当作连接失败。
-- **地址格式**：
+- **`transport_type`**: `"quic"`, registered in `TransportRegistry` (consistent with the reserved `# "quic": QUICTransport` in [core/node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py)).
+- **Version / ALPN**: **MUST** use QUIC v1 (RFC 9000) with ALPN `"msp/1"`; **MUST NOT** reuse HTTP/3's `"h3"`.
+- **1-RTT and 0-RTT**: the first connection **MUST** perform the full 1-RTT handshake (TLS 1.3). After caching a valid session ticket, the client **MAY** send the first MSP message together with the ClientHello using **0-RTT early data**. 0-RTT data **MUST** satisfy the idempotence requirement — signals with side effects such as `tool_call` **MUST NOT** be placed in 0-RTT, and only `hello` **SHOULD** go there. When the server rejects 0-RTT, the client **MUST** fall back to 1-RTT and resend, and **MUST NOT** treat "0-RTT rejected" as a connection failure.
+- **Address format**:
 
 ```json
 {
@@ -201,25 +201,25 @@ Sec-WebSocket-Accept: <accept>
 }
 ```
 
-  | 字段 | 类型 | 默认值 | 语义 |
+  | Field | Type | Default | Semantics |
   |---|---|---|---|
-  | `host` | str | `"127.0.0.1"` | 主机 |
-  | `port` | int | `0`（listen）；connect 必填 | 端口；`0` 表示动态分配并回填 |
-  | `alpn` | str | `"msp/1"` | ALPN 标识；取值不是 `msp/1` 时**必须**拒绝 |
-  | `early_data` | bool | `false` | 是否允许 0-RTT |
-  | `max_streams` | int | `8` | 本端允许的对端并发双向流上限 |
+  | `host` | str | `"127.0.0.1"` | Host |
+  | `port` | int | `0` (listen); required for connect | Port; `0` means allocate dynamically and write the value back |
+  | `alpn` | str | `"msp/1"` | ALPN identifier; any value other than `msp/1` **MUST** be rejected |
+  | `early_data` | bool | `false` | Whether 0-RTT is allowed |
+  | `max_streams` | int | `8` | Upper bound on concurrent bidirectional streams this end accepts from the peer |
 
-  未知字段**必须**被忽略（宽容读取），与 [base-protocol.md](./base-protocol.md) 的字段策略一致。
-- **分帧与流复用**：一条 `Connection` **必须**绑定**一条**长期存在的双向流，其上复用与 TCP/UDS **逐字节相同**的 4 字节大端长度前缀帧（§3.1），使 `TransportRegistry`、协议层与 `MAX_MESSAGE_SIZE` 全部零改动。并发**可以**通过开新流实现，但**不得**把一条 `send()` 的消息拆分到多条流上——`receive()` 的「恰好一条完整消息」语义不因传输而改变。
-- **拥塞控制**：**必须**使用至少与 TCP NewReno 等价的拥塞控制（CUBIC 或 BBR），**不得**无限速发送；流级与连接级流控**必须**同时生效。
-- **连接迁移**：连接标识**必须**基于 Connection ID 而非 `(host, port)` 四元组；客户端换网后**应当**继续使用同一连接，**不得**因此丢弃已建立的 MSP 会话状态。
-- **与 TCP 的差异**：① 单连接内多流、无队头阻塞（每条流独立重传）；② 加密与认证内建（TLS 1.3 在 QUIC 内部，**不**存在「先明文 Upgrade 再加密」的 WebSocket 式阶段）；③ 支持 0-RTT 与连接迁移；④ 基于 UDP，需显式处理丢包与 MTU（PMTU 探测）；⑤ 服务端**可以**在同一端口同时服务 QUIC 与 TCP（实现自定）。
-- **生命周期**：`listen` / `accept` / `connect` / `close` 语义与 `Transport` 契约完全一致（§2.2）；`accept()` 阻塞直到入站连接完成 QUIC 握手。
-- **迁移路径**：把 `Preset.transports` 从 `{"tcp"}` 换成 `{"quic"}`（或并存），`primary_transport` 指向 `"quic"`，其余各层无需改动——这正是「传输层只搬字节」的直接收益。
+  Unknown fields **MUST** be ignored (lenient reading), consistent with the field policy in [base-protocol.md](./base-protocol.md).
+- **Framing and stream reuse**: one `Connection` **MUST** be bound to **one** long-lived bidirectional stream, carrying **byte-for-byte the same** 4-byte big-endian length-prefixed frames as TCP/UDS (§3.1), so that `TransportRegistry`, the protocol layer and `MAX_MESSAGE_SIZE` all remain unchanged. Concurrency **MAY** be achieved by opening new streams, but **MUST NOT** split the message of a single `send()` across several streams — the "exactly one complete message" semantics of `receive()` do not change with the transport.
+- **Congestion control**: **MUST** use congestion control at least equivalent to TCP NewReno (CUBIC or BBR) and **MUST NOT** send without a rate limit; stream-level and connection-level flow control **MUST** both be in effect.
+- **Connection migration**: the connection identity **MUST** be based on the Connection ID rather than the `(host, port)` 4-tuple; after a client changes networks it **SHOULD** keep using the same connection and **MUST NOT** discard the established MSP session state because of it.
+- **Differences from TCP**: ① multiple streams within one connection with no head-of-line blocking (each stream retransmits independently); ② encryption and authentication are built in (TLS 1.3 sits inside QUIC, so there is **no** WebSocket-style stage of "plaintext Upgrade first, encryption afterwards"); ③ 0-RTT and connection migration are supported; ④ it runs over UDP, so packet loss and MTU need explicit handling (PMTU discovery); ⑤ the server **MAY** serve QUIC and TCP on the same port at once (implementation-defined).
+- **Lifecycle**: the semantics of `listen` / `accept` / `connect` / `close` are fully consistent with the `Transport` contract (§2.2); `accept()` blocks until an inbound connection completes the QUIC handshake.
+- **Migration path**: change `Preset.transports` from `{"tcp"}` to `{"quic"}` (or keep both), point `primary_transport` at `"quic"`, and no other layer needs to change — this is the direct payoff of "the transport layer only moves bytes".
 
-## 4. 消息流
+## 4. Message flows
 
-### 4.1 TCP 出站连接与分帧
+### 4.1 TCP outbound connection and framing
 
 ```
 Client (TransportRegistry)                    Server (Transport)
@@ -228,7 +228,7 @@ Client (TransportRegistry)                    Server (Transport)
         |   sock.settimeout(10.0)                     |  SO_REUSEADDR + bind + listen(128)
         |   sock.connect((host, port))                |
         |   sock.settimeout(None)                     |
-        |<------------------- Connection -------------|  （阻塞 accept() 返回 Connection）
+        |<------------------- Connection -------------|  (blocking accept() returns Connection)
         |                                             |
         |-- send(b"HELLO...") -->[00 00 00 1D][HELLO] |  _recv_exact(4) -> len=29
         |                                             |  _recv_exact(29)  -> payload
@@ -236,65 +236,65 @@ Client (TransportRegistry)                    Server (Transport)
         |-- close() --> shutdown(SHUT_RDWR) + close() |
 ```
 
-与 WebSocket 的差别：TCP **没有**传输层握手，`accept()` 返回的 `Connection` 立刻可用；MSP 层 HELLO/ACK 随后由协议层完成。
+The difference from WebSocket: TCP has **no** transport-layer handshake, and the `Connection` returned by `accept()` is usable immediately; the MSP-layer HELLO/ACK is then completed by the protocol layer.
 
-### 4.2 UDS 生命周期（含残留清理）
+### 4.2 UDS lifecycle (including stale cleanup)
 
 ```
-进程 A                                                   进程 B
+Process A                                          Process B
   | listen({"path": P})                                    |
-  |   _require_af_unix()  -> 无 AF_UNIX 则 RuntimeError    |
-  |   _unlink_stale(P): stat(P) 是 S_ISSOCK ? unlink(P)    |
+  |   _require_af_unix()  -> RuntimeError if no AF_UNIX    |
+  |   _unlink_stale(P): stat(P) is S_ISSOCK ? unlink(P)    |
   |   bind(P) ; chmod(P, 0o600) ; listen(128)              |
-  |   返回 {"transport_type":"uds","address":{"path":P}}   |
+  |   returns {"transport_type":"uds","address":{"path":P}}|
   |<--------------- connect({"path": P}) ------------------|
-  | accept() -> TCPConnection（复用 4 字节长度前缀分帧）   |
+  | accept() -> TCPConnection (4-byte length prefix)       |
   | close() -> server.close() ; _unlink_stale(P)           |
-  |            （socket 文件被删除，同路径可再次 listen）  |
+  |            (socket file removed; path can be reused)   |
 ```
 
-### 4.3 WebSocket 握手与首帧残留
+### 4.3 WebSocket handshake and leftover first-frame bytes
 
 ```
 Client                                              Server
-  |-- GET /msp HTTP/1.1 ... Sec-WebSocket-Key: K -->|  _read_http_headers（<=64 KiB, 10 s 超时）
+  |-- GET /msp HTTP/1.1 ... Sec-WebSocket-Key: K -->|  _read_http_headers (<=64 KiB, 10 s timeout)
   |                                                 |  accept = base64(SHA1(K + GUID))
-  |<-- HTTP/1.1 101 ... Sec-WebSocket-Accept ------|  可能同时读到首帧字节 -> leftover
-  |   leftover 存入 _buf；随后 _recv_exact 优先消费 |
-  |-- send(b"...") --> [0x82][0x80|len][mask][data]|  服务端发帧不加掩码
+  |<-- HTTP/1.1 101 ... Sec-WebSocket-Accept -------|  may read first-frame bytes too -> leftover
+  |   leftover in _buf; _recv_exact reads it first  |
+  |-- send(b"...") --> [0x82][0x80|len][mask][data]|  server sends frames unmasked
 ```
 
-### 4.4 QUIC 0-RTT（🔵 规划中）
+### 4.4 QUIC 0-RTT (🔵 planned)
 
 ```
 Client                                              Server
-  |  （首次连接：1-RTT）                              |
+  |  (first connection: 1-RTT)                        |
   |-- Initial(ClientHello, alpn="msp/1") ------------>|
   |<-- Initial(ServerHello) + Handshake + 1-RTT ------|
-  |<-- NewSessionTicket（缓存，供下次 0-RTT）---------|
-  |  （再次连接：early_data=true）                     |
-  |-- Initial(ClientHello, early_data) + 0-RTT ------>|  仅接受幂等信号（应当只有 hello）
-  |<-- 1-RTT 完成；0-RTT 被拒时回退 1-RTT 重发 --------|
+  |<-- NewSessionTicket (cached for next 0-RTT) ------|
+  |  (reconnect: early_data=true)                     |
+  |-- Initial(ClientHello, early_data) + 0-RTT ------>|  idempotent signals only; SHOULD be hello only
+  |<-- 1-RTT done; 0-RTT rejected -> resend on 1-RTT -|
 ```
 
-## 5. 数据类型
+## 5. Data types
 
-| 类型 / 符号 | 定义 | 说明 |
+| Type / symbol | Definition | Notes |
 |---|---|---|
-| `Connection` | 抽象类，`send` / `receive` / `close` | 字节搬运的唯一接口 |
-| `ConnectionClosed` | `Exception` 子类 | 「这条连接不可再用」；**不**用于表示「没连上」 |
-| `Transport` | 抽象类，`listen` / `accept` / `connect` / `close` | 一种协议的后端 |
-| `TransportRegistry` | 具体类 | 后端表 + 按 `Endpoint.transport_type` 派发 |
-| `UnsupportedTransport` | `Exception` 子类 | 没有匹配的后端 |
-| `TCPConnection` | `Connection` 实现 | 4 字节大端长度前缀分帧；**被 UDS 复用** |
-| `WebSocketConnection` | `Connection` 实现 | RFC 6455 帧编解码 + 分片重组 |
-| `UDSTransport` | `Transport` 实现 | `AF_UNIX`，仅 Linux/macOS |
-| `MAX_MESSAGE_SIZE` | `16 * 1024 * 1024` | TCP/UDS 与 WebSocket 共用同一常量值 |
-| `TCPConnection.HEADER_SIZE` | `4` | 长度前缀字节数 |
-| WebSocket `GUID` | `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` | RFC 6455 握手魔数 |
-| WebSocket opcode | `0x0` CONT / `0x1` TEXT / `0x2` BINARY / `0x8` CLOSE / `0x9` PING / `0xA` PONG | 发送只用 `0x2` |
+| `Connection` | Abstract class, `send` / `receive` / `close` | The only interface for moving bytes |
+| `ConnectionClosed` | `Exception` subclass | "This connection can no longer be used"; **not** used for "did not connect" |
+| `Transport` | Abstract class, `listen` / `accept` / `connect` / `close` | The backend of one protocol |
+| `TransportRegistry` | Concrete class | Backend table + dispatch by `Endpoint.transport_type` |
+| `UnsupportedTransport` | `Exception` subclass | No matching backend |
+| `TCPConnection` | `Connection` implementation | 4-byte big-endian length-prefix framing; **reused by UDS** |
+| `WebSocketConnection` | `Connection` implementation | RFC 6455 frame codec + fragment reassembly |
+| `UDSTransport` | `Transport` implementation | `AF_UNIX`, Linux/macOS only |
+| `MAX_MESSAGE_SIZE` | `16 * 1024 * 1024` | TCP/UDS and WebSocket share the same constant value |
+| `TCPConnection.HEADER_SIZE` | `4` | Number of length-prefix bytes |
+| WebSocket `GUID` | `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` | RFC 6455 handshake magic value |
+| WebSocket opcode | `0x0` CONT / `0x1` TEXT / `0x2` BINARY / `0x8` CLOSE / `0x9` PING / `0xA` PONG | Sending uses `0x2` only |
 
-`listen_all()` 返回值示例：
+Example `listen_all()` return value:
 
 ```json
 {
@@ -304,96 +304,96 @@ Client                                              Server
 }
 ```
 
-`Endpoint` 的字段定义与去重规则见 [discovery.md §5](./discovery.md#5-数据类型)。
+The field definitions and deduplication rules of `Endpoint` are in [discovery.md §5](./discovery.md#5-data-types).
 
-## 6. 错误处理与边界
+## 6. Error handling and boundaries
 
-| 场景 | 抛出 | 是否关闭连接 |
+| Scenario | Raised | Connection closed |
 |---|---|---|
-| `send` / `receive` 于已关闭连接 | `ConnectionClosed` | 已是关闭态 |
-| `send` / `receive` 时 OS 错误 | `ConnectionClosed` | 是（先 `close()`） |
-| 对端 EOF（读到 0 字节） | `ConnectionClosed` | **否**（见 §9） |
-| 接收侧 `len > 16 MiB` | `ConnectionClosed` | 是 |
-| WebSocket 单帧 `len > 16 MiB` | `ConnectionClosed` | 是 |
-| WebSocket 收到 close 帧 | `ConnectionClosed` | 回 close 帧后关闭 |
-| `connect` 失败 / 超时 | `ConnectionError` | 是（`sock.close()`） |
-| `accept()` 于 `listen()` 之前 | `RuntimeError("listen() 未调用")` | 无连接 |
-| UDS 在无 `AF_UNIX` 平台调 `listen()` / `connect()` | `RuntimeError` | 无连接 |
-| WebSocket `connect` 传入非 `ws://` URL | `ValueError` | 无连接（解析先于连接） |
-| WebSocket 状态行非 101 / Accept 不匹配 | `ConnectionError` | 是 |
-| 服务端收到无 `Sec-WebSocket-Key` 的请求 | `ConnectionError` | 是（`accept()` 内 `sock.close()`） |
-| HTTP 头超过 64 KiB | `ConnectionError` | 是 |
-| 握手期间 EOF | `ConnectionClosed` | 是 |
-| `Registry.connect` 遇未注册类型 | `UnsupportedTransport` | 无连接 |
+| `send` / `receive` on an already closed connection | `ConnectionClosed` | Already closed |
+| OS error during `send` / `receive` | `ConnectionClosed` | Yes (`close()` first) |
+| Peer EOF (0 bytes read) | `ConnectionClosed` | **No** (see §9) |
+| Receiving side `len > 16 MiB` | `ConnectionClosed` | Yes |
+| WebSocket single frame `len > 16 MiB` | `ConnectionClosed` | Yes |
+| WebSocket close frame received | `ConnectionClosed` | Closed after replying with a close frame |
+| `connect` failure / timeout | `ConnectionError` | Yes (`sock.close()`) |
+| `accept()` before `listen()` | `RuntimeError("listen() not called")` | No connection |
+| UDS `listen()` / `connect()` on a platform without `AF_UNIX` | `RuntimeError` | No connection |
+| WebSocket `connect` with a non-`ws://` URL | `ValueError` | No connection (parsing precedes connecting) |
+| WebSocket status line not 101 / Accept mismatch | `ConnectionError` | Yes |
+| Server receives a request without `Sec-WebSocket-Key` | `ConnectionError` | Yes (`sock.close()` inside `accept()`) |
+| HTTP headers exceed 64 KiB | `ConnectionError` | Yes |
+| EOF during the handshake | `ConnectionClosed` | Yes |
+| `Registry.connect` with an unregistered type | `UnsupportedTransport` | No connection |
 
-边界取值：`len == 0` 是合法空消息；`len == 16777216` 合法；`len == 16777217` 断开。WebSocket 的 `126` 与 `127` 是**扩展长度标记**，不是长度本身。
+Boundary values: `len == 0` is a valid empty message; `len == 16777216` is valid; `len == 16777217` disconnects. In WebSocket, `126` and `127` are **extended length markers**, not the length itself.
 
-## 7. 规范条文汇总（MUST/SHOULD 清单）
+## 7. Summary of normative provisions (MUST/SHOULD list)
 
-1. `Connection.receive()` **必须**返回恰好一条完整消息的负载，**不得**返回分帧头。
-2. `Connection` **必须**用 `ConnectionClosed` 统一表示「不可再用」；`close()` **必须**幂等。
-3. `Transport.listen({})` **必须**可用并返回实际监听地址（形态见 §2.2）。
-4. `Transport.connect` 失败**必须**抛 `ConnectionError`，**不得**抛 `ConnectionClosed`。
-5. 传输层**不得**解析 `Signal`、**不得**参与 MSP 层握手、**不得**依据 `node_id` 做任何判断。
-6. TCP/UDS 分帧**必须**使用 4 字节**大端**长度前缀，`len` **不得**包含长度字段自身。
-7. 接收侧 `len > 16777216` 时**必须**断开并抛 `ConnectionClosed`。
-8. 接收侧**不得**因半包返回部分数据，**必须**阻塞至凑满整帧。
-9. 发送侧**应当**为一条消息的字节写入加锁，**不得**让两条消息的字节交错。
-10. `TransportRegistry` **必须**按 `Endpoint.transport_type` 精确选择后端，无匹配时抛 `UnsupportedTransport`。
-11. `TransportRegistry.listen_all()` **必须**以空字典调用每个后端的 `listen`。
-12. `TransportRegistry.close_all()` **不得**因单个后端失败而中断其余后端的关闭。
-13. WebSocket 客户端帧**必须**带掩码、服务端帧**必须**不带掩码；客户端**必须**校验 `Sec-WebSocket-Accept`。
-14. WebSocket 控制帧**应当**在 `receive()` 内部处理，**不得**返回给上层；握手多读到的字节**不得**丢弃。
-15. UDS 的 socket 文件权限**必须**收紧为 `0o600`；清理残留时**必须**先确认 `stat.S_ISSOCK`，**不得**删除普通文件。
-16. UDS 在无 `socket.AF_UNIX` 的平台**必须**显式失败（`RuntimeError`），**不得**静默降级成别的传输。
-17. QUIC（🔵）实现**必须**使用 ALPN `"msp/1"`、**必须**复用 4 字节长度前缀帧、**不得**在 0-RTT 中发送有副作用的信号。
+1. `Connection.receive()` **MUST** return the payload of exactly one complete message and **MUST NOT** return framing headers.
+2. A `Connection` **MUST** use `ConnectionClosed` uniformly for "no longer usable"; `close()` **MUST** be idempotent.
+3. `Transport.listen({})` **MUST** work and return the actual listening address (form in §2.2).
+4. `Transport.connect` **MUST** raise `ConnectionError` on failure and **MUST NOT** raise `ConnectionClosed`.
+5. The transport layer **MUST NOT** parse `Signal`, **MUST NOT** take part in the MSP-layer handshake, and **MUST NOT** make any decision based on `node_id`.
+6. TCP/UDS framing **MUST** use a 4-byte **big-endian** length prefix, and `len` **MUST NOT** include the length field itself.
+7. The receiving side **MUST** disconnect and raise `ConnectionClosed` when `len > 16777216`.
+8. The receiving side **MUST NOT** return partial data for a partial frame and **MUST** block until it has the whole frame.
+9. The sending side **SHOULD** lock the byte writes of one message and **MUST NOT** let the bytes of two messages interleave.
+10. `TransportRegistry` **MUST** select the backend exactly by `Endpoint.transport_type`, raising `UnsupportedTransport` when nothing matches.
+11. `TransportRegistry.listen_all()` **MUST** call each backend's `listen` with an empty dictionary.
+12. `TransportRegistry.close_all()` **MUST NOT** abort the shutdown of the remaining backends because one backend failed.
+13. WebSocket client frames **MUST** be masked and server frames **MUST NOT** be masked; the client **MUST** validate `Sec-WebSocket-Accept`.
+14. WebSocket control frames **SHOULD** be handled inside `receive()` and **MUST NOT** be returned to the upper layer; bytes read in excess during the handshake **MUST NOT** be discarded.
+15. The UDS socket file permissions **MUST** be tightened to `0o600`; cleanup of a stale file **MUST** first confirm `stat.S_ISSOCK` and **MUST NOT** delete a regular file.
+16. UDS on a platform without `socket.AF_UNIX` **MUST** fail explicitly (`RuntimeError`) and **MUST NOT** silently degrade to another transport.
+17. A QUIC (🔵) implementation **MUST** use ALPN `"msp/1"`, **MUST** reuse the 4-byte length-prefix frame, and **MUST NOT** send signals with side effects in 0-RTT.
 
-## 8. 安全考量
+## 8. Security considerations
 
-- **TLS 挂在哪一层**：TLS **必须**终结在**传输后端内部**——即 socket 之上、`Connection` 之下；`TransportRegistry`、协议层与模式层**不得**感知 TLS 的存在，也**不得**依赖 TLS 提供的身份做路由判断。身份的语义（证书 CN/SAN 或签名 HELLO 与 `node_id` 的绑定）属于 [security.md](./security.md) 的范围，本层只提供字节管道。
-- **现状**：参考实现**没有** TLS。WebSocket 只支持 `ws://`（明文），`wss://` 会被 `_parse_url` 拒绝；TCP 与 UDS 也没有加密。因此当前版本的信任边界就是「谁能连上来」。
-- **监听面**：TCP/WebSocket 默认绑定 `127.0.0.1`。改成 `0.0.0.0` 或公网地址会把信任域扩大到整个可达网络——在 TLS 与节点认证就位之前，**不应当**这样做。
-- **UDS 权限**：`0o600` 使 socket 只对本用户可连，与「本机同用户全量信任」的模型一致。它只挡住同机其它用户，**不**提供认证：同一用户下的任意进程仍可连上并冒充任意 `node_id`。
-- **资源耗尽防护**：16 MiB 上限是唯一内建的内存保护；它只在接收侧生效，且对 WebSocket 只按单帧判定（见 §9）。UDP 化的 QUIC 还**必须**额外处理放大攻击（服务端**不得**在地址验证前发送超过 3 倍请求体积的数据）。
-- **HTTP 注册表的明文传输**与声明文件的可伪造性属于发现层的安全问题，见 [discovery.md §8](./discovery.md#8-安全考量)。
+- **Which layer TLS sits at**: TLS **MUST** terminate **inside the transport backend** — that is, above the socket and below `Connection`; `TransportRegistry`, the protocol layer and the pattern layer **MUST NOT** be aware of TLS and **MUST NOT** rely on the identity TLS provides for routing decisions. The semantics of identity (certificate CN/SAN, or the binding between a signed HELLO and `node_id`) belong to [security.md](./security.md); this layer provides nothing but a byte pipe.
+- **Current state**: the reference implementation has **no** TLS. WebSocket supports `ws://` only (plaintext); `wss://` is rejected by `_parse_url`; TCP and UDS are unencrypted as well. The trust boundary of the current version is therefore "whoever can connect".
+- **Listening surface**: TCP/WebSocket bind to `127.0.0.1` by default. Changing that to `0.0.0.0` or a public address widens the trust domain to the whole reachable network — before TLS and node authentication are in place, that **SHOULD NOT** be done.
+- **UDS permissions**: `0o600` makes the socket connectable only by this user, consistent with the model of "full trust among processes of the same user on this machine". It blocks other users on the same machine only; it does **not** provide authentication: any process under the same user can still connect and impersonate any `node_id`.
+- **Resource-exhaustion protection**: the 16 MiB limit is the only built-in memory protection; it applies on the receiving side only and, for WebSocket, is judged per frame (see §9). A UDP-based QUIC **MUST** additionally handle amplification attacks (the server **MUST NOT** send more than 3 times the request size before address validation).
+- **The plaintext transport of the HTTP registry** and the forgeability of declaration files are discovery-layer security issues; see [discovery.md §8](./discovery.md#8-security-considerations).
 
-## 9. 已知缺口
+## 9. Known gaps
 
-1. ~~**MSP 层握手无读超时**~~ ✅ **已修复**：`Connection` 增加 `set_read_timeout(timeout)`（TCP / UDS / WebSocket 已实现；基类默认空实现，第三方后端不受影响），协议层握手用 `handshake_timeout`（默认 10 s）约束 `receive()`，读完立即恢复阻塞模式；超时以 `ConnectionClosed` 结束并关闭连接。
-2. **WebSocket HTTP 握手在 accept 循环线程内同步执行**：每个后端只有一个接受线程，慢客户端（最多占满 10 s 握手超时）会让该后端在此期间停止接受新连接。
-3. **WebSocket 服务端不校验请求方法、路径与 `Sec-WebSocket-Version`**：任何带 `Sec-WebSocket-Key` 的 HTTP 请求都会被升级。
-4. **服务端不强制客户端掩码**：RFC 6455 要求客户端帧带掩码，实现按帧头决定是否解掩码，收到未掩码帧不报错。
-5. **WebSocket 分片重组无总长上限**：16 MiB 上限按单帧判定，多帧累加可以超过该上限（内存耗尽风险）。
-6. **发送侧不校验上限**：TCP/UDS/WebSocket 的 `send` 都不检查 `MAX_MESSAGE_SIZE`，超长消息只会在对端造成断开。
-7. **EOF 路径不置 `_closed`、不关闭 socket**：`_recv_exact` 遇 EOF 直接抛 `ConnectionClosed`，而 `receive()` 只捕获 `OSError`，因此该路径既不改状态也不 `close()`；调用方**必须**自行 `close()`，重复 `receive()` 会重复抛 `ConnectionClosed`。
-8. **UDS 仅 Linux/macOS**：Windows 的 Python 未暴露 `socket.AF_UNIX`，`listen()` / `connect()` 抛 `RuntimeError`；`accept()` 不做平台检查，只报 `RuntimeError("listen() 未调用")`。
-9. **UDS 路径长度未校验**：Linux `sun_path` 约 108 字节，长临时目录 + 长 `node_id` 会 `bind` 失败（`OSError`），错误信息不指向真正原因。
-10. **`_unlink_stale` 用 `os.stat`（跟随符号链接）**：指向 socket 的符号链接会被 unlink（删掉链接本身）——这是「只删 `S_ISSOCK`」防线的例外情形。
-11. **`UDSTransport.close()` 会 unlink 记录下来的路径**，即使该路径上的文件已被另一个进程重建。
-12. **`TransportRegistry` 无回滚、无告警**：`listen_all()` 中任一后端 `listen` 抛错会中断整个过程，先前已监听的后端不回滚关闭；重复 `register` 同一类型静默覆盖；没有 `unregister`；`_endpoints` 无公开访问器。
-13. **仅 IPv4**：所有后端都建 `AF_INET` socket，不支持 IPv6。
-14. **WebSocket 未实现扩展协商**：无 `permessage-deflate`、无子协议、无 `wss://`。
-15. **QUIC 未实现**：`TRANSPORT_REGISTRY` 中只有注释占位。
-16. **只有 `primary_transport` 进入声明**：多后端节点对外只暴露一个地址，其余后端实际不可被发现。
-17. **`close()` 不保证唤醒阻塞中的 `accept()`**：关闭监听 socket 后阻塞在 `accept()` 的线程行为未定义，接受循环靠节点运行标志与异常分支退出。
+1. ~~**No read timeout on the MSP-layer handshake**~~ ✅ **Fixed**: `Connection` gained `set_read_timeout(timeout)` (implemented for TCP / UDS / WebSocket; the base class defaults to an empty implementation, so third-party backends are unaffected), and the protocol-layer handshake bounds `receive()` with `handshake_timeout` (10 s by default) and restores blocking mode as soon as the read finishes; a timeout ends in `ConnectionClosed` and closes the connection.
+2. **The WebSocket HTTP handshake runs synchronously in the accept-loop thread**: each backend has a single accept thread, so a slow client (occupying up to the 10 s handshake timeout) stops that backend from accepting new connections in the meantime.
+3. **The WebSocket server does not validate the request method, path or `Sec-WebSocket-Version`**: any HTTP request carrying `Sec-WebSocket-Key` is upgraded.
+4. **The server does not enforce client masking**: RFC 6455 requires client frames to be masked, but the implementation decides unmasking from the frame header and does not report an error when it receives an unmasked frame.
+5. **WebSocket fragment reassembly has no total-length limit**: the 16 MiB limit is judged per frame, and accumulating several frames can exceed it (memory-exhaustion risk).
+6. **The sending side does not validate the limit**: `send` on TCP/UDS/WebSocket never checks `MAX_MESSAGE_SIZE`; an oversized message only causes a disconnect at the peer.
+7. **The EOF path neither sets `_closed` nor closes the socket**: `_recv_exact` raises `ConnectionClosed` directly on EOF, while `receive()` only catches `OSError`, so that path neither changes state nor calls `close()`; the caller **MUST** call `close()` itself, and a repeated `receive()` raises `ConnectionClosed` again.
+8. **UDS is Linux/macOS only**: Python on Windows does not expose `socket.AF_UNIX`, so `listen()` / `connect()` raise `RuntimeError`; `accept()` performs no platform check and only reports `RuntimeError("listen() not called")`.
+9. **The UDS path length is not validated**: Linux's `sun_path` is about 108 bytes, so a long temporary directory plus a long `node_id` makes `bind` fail (`OSError`), and the error message does not point at the real cause.
+10. **`_unlink_stale` uses `os.stat` (following symbolic links)**: a symbolic link pointing at a socket is unlinked (deleting the link itself) — this is the exception to the "delete only `S_ISSOCK`" guard.
+11. **`UDSTransport.close()` unlinks the recorded path** even when the file at that path has already been recreated by another process.
+12. **`TransportRegistry` has no rollback and no warning**: an error from any backend's `listen` in `listen_all()` aborts the whole procedure and the backends that already listened are not rolled back and closed; registering the same type twice silently overwrites; there is no `unregister`; `_endpoints` has no public accessor.
+13. **IPv4 only**: every backend creates an `AF_INET` socket and does not support IPv6.
+14. **WebSocket implements no extension negotiation**: no `permessage-deflate`, no subprotocols, no `wss://`.
+15. **QUIC is not implemented**: `TRANSPORT_REGISTRY` holds a commented-out placeholder only.
+16. **Only `primary_transport` reaches the declaration**: a multi-backend node exposes a single address to the outside, and the remaining backends are effectively undiscoverable.
+17. **`close()` does not guarantee waking a blocked `accept()`**: the behaviour of a thread blocked in `accept()` after the listening socket is closed is undefined, and the accept loop exits via the node's run flag and exception branches.
 
-## 10. 参考实现映射
+## 10. Reference implementation map
 
-| 条文 / 契约 | 源码文件与符号 |
+| Provision / contract | Source file and symbols |
 |---|---|
-| `Connection.send` / `receive` / `close`、`ConnectionClosed`、`Transport` | [base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) |
+| `Connection.send` / `receive` / `close`, `ConnectionClosed`, `Transport` | [base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) |
 | `register` / `has` / `get` / `items` / `listen_all` / `connect` / `close_all` / `UnsupportedTransport` | [registry.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/registry.py) |
-| 4 字节大端长度前缀分帧、16 MiB 上限、`_send_lock` | [tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) `TCPConnection`、`MAX_MESSAGE_SIZE` |
+| 4-byte big-endian length-prefix framing, 16 MiB limit, `_send_lock` | [tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) `TCPConnection`, `MAX_MESSAGE_SIZE` |
 | TCP `listen` / `accept` / `connect(timeout=10.0)` / `close` | [tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) `TCPTransport` |
-| WebSocket 握手（客户端 / 服务端） | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_client_handshake` / `_server_handshake` / `GUID` |
-| WebSocket 帧编解码、掩码、分片、控制帧 | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_make_frame` / `_read_frame` / `receive` |
-| WebSocket 地址解析、HTTP 头上限 | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_parse_url` / `_read_http_headers` |
-| UDS 平台限制 | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `_AF_UNIX_AVAILABLE` / `_require_af_unix` |
-| UDS 默认路径、`0o600`、残留清理、close 时 unlink | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `listen` / `_unlink_stale` / `close` |
-| 后端注册表内容（`tcp` / `websocket` / `uds`，`quic` 占位） | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `TRANSPORT_REGISTRY` |
-| `primary_transport` 决定对外宣告的端点 | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `MSPNode.start` |
-| 每个后端一个接受循环线程 | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `_accept_loop` / `_accept_loop_for` |
-| `Endpoint` 形态与 `address_key()` | [discovery/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/discovery/base.py) `Endpoint` |
-| TCP / UDS / WebSocket 往返、大消息、同路径重新监听 | [test_uds.py](https://github.com/hxh230802/MSP/blob/master/tests/test_uds.py)、[test_websocket.py](https://github.com/hxh230802/MSP/blob/master/tests/test_websocket.py) |
+| WebSocket handshake (client / server) | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_client_handshake` / `_server_handshake` / `GUID` |
+| WebSocket frame codec, masking, fragmentation, control frames | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_make_frame` / `_read_frame` / `receive` |
+| WebSocket URL parsing, HTTP header limit | [websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `_parse_url` / `_read_http_headers` |
+| UDS platform limit | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `_AF_UNIX_AVAILABLE` / `_require_af_unix` |
+| UDS default path, `0o600`, stale cleanup, unlink on close | [uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `listen` / `_unlink_stale` / `close` |
+| Registry contents (`tcp` / `websocket` / `uds`, `quic` placeholder) | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `TRANSPORT_REGISTRY` |
+| `primary_transport` decides the announced endpoint | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `MSPNode.start` |
+| One accept-loop thread per backend | [node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `_accept_loop` / `_accept_loop_for` |
+| `Endpoint` shape and `address_key()` | [discovery/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/discovery/base.py) `Endpoint` |
+| TCP / UDS / WebSocket round-trips, large messages, re-listening on the same path | [test_uds.py](https://github.com/hxh230802/MSP/blob/master/tests/test_uds.py), [test_websocket.py](https://github.com/hxh230802/MSP/blob/master/tests/test_websocket.py) |
 
-相关页面：[base-protocol.md](./base-protocol.md)（`Signal` 信封与握手）· [discovery.md](./discovery.md)（`Endpoint` 的产出方）· [security.md](./security.md)（TLS、认证与授权）· [architecture.md](./architecture.md)（分层架构与层间契约）。
+Related pages: [base-protocol.md](./base-protocol.md) (`Signal` envelope and handshake) · [discovery.md](./discovery.md) (producer of `Endpoint`) · [security.md](./security.md) (TLS, authentication and authorization) · [architecture.md](./architecture.md) (layered architecture and inter-layer contracts).

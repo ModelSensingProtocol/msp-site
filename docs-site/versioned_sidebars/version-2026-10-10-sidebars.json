@@ -10,7 +10,7 @@
     "glossary",
     {
       "type": "category",
-      "label": "示例",
+      "label": "Examples",
       "items": [
         "examples/index",
         "examples/weather",

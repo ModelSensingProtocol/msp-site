@@ -1,104 +1,104 @@
-# MSP 安全模型 —— 信任边界、节点认证与授权
+# MSP Security Model — Trust Boundary, Node Authentication and Authorization
 
 | | |
 |---|---|
-| **协议修订** | `2026-10-10` |
-| **状态** | 🟡 部分实现 |
-| **本页定义** | 信任边界的判定规则、威胁模型、跨机部署所需的 TLS / 节点认证 / 身份绑定，以及授权表 `grants` 的完整语义与执行点 |
+| **Protocol revision** | `2026-10-10` |
+| **Status** | 🟡 Partially implemented |
+| **Defined on this page** | The rules for determining the trust boundary, the threat model, the TLS / node authentication / identity binding required for a cross-machine deployment, and the complete semantics and enforcement points of the authorization table `grants` |
 
-> 规范性用语（**必须** / **不得** / **应当** / **不应当** / **可以**）与状态标记（✅ 已实现 / 🟡 部分实现 / 🔵 规划中）的定义见[规范索引 §2](index.md#2-规范性用语)。正文中加粗的关键词承担规范效力。
+> The definitions of the normative terms (**MUST** / **MUST NOT** / **SHOULD** / **SHOULD NOT** / **MAY**) and of the status markers (✅ implemented / 🟡 partially implemented / 🔵 planned) are in [Specification index §2](index.md#2-normative-language). Bold keywords in the body text carry normative force.
 
-**本页的状态分布**：信任边界 = 传输可达范围，是**当前实现的事实姿态**（✅）；TLS、节点认证、身份绑定、授权表全部为 🔵 **规划中**——设计已定稿、实现待排期。规划中的条文「**实现者可以不实现，但一旦实现必须符合条文**」（[README §7](index.md#7-一致性) 第 6 条）。
+**Status distribution on this page**: the trust boundary = the reachable extent of the transport, which is the **factual posture of the current implementation** (✅); TLS, node authentication, identity binding and the authorization table are all 🔵 **planned** — the design is final, implementation is to be scheduled. For the planned provisions, "**an implementer MAY leave them unimplemented, but once implemented they MUST comply with the provisions**" ([README §7](index.md#7-conformance), item 6).
 
 
-## 1. 概述
+## 1. Overview
 
-### 1.1 核心结论
+### 1.1 Core conclusion
 
-> **信任边界就是传输可达范围——谁能连上来，谁就在信任域内。**
+> **The trust boundary is the reachable extent of the transport — whoever can connect in is inside the trust domain.**
 
-三条推论：
+Three corollaries:
 
-1. 协议层因此**不得**把 TLS / 认证 / 授权做成每条消息自带的默认校验；安全由**部署形态**决定，而不是由每一条消息自己决定。
-2. 「连上来」之后还要分两层：**认证**（Authentication：你是谁）与**授权**（Authorization：你能做什么）。二者不可互相替代。
-3. 一个不能真正提供安全性的安全功能，比没有更危险。因此本规范**不得**给出虚假的默认安全承诺；反过来，只要声明的边界与实现一致，**不实现**扩展安全机制就是合规的（[README §7](index.md#7-一致性) 第 6 条）。
+1. The protocol layer therefore **MUST NOT** make TLS / authentication / authorization a default check carried by every message; security is decided by the **deployment shape**, not by each individual message.
+2. Beyond "connected" there are two further layers: **authentication** (who you are) and **authorization** (what you may do). Neither can substitute for the other.
+3. A security feature that cannot actually deliver security is more dangerous than none at all. This specification therefore **MUST NOT** make a false default security promise; conversely, as long as the declared boundary matches the implementation, **not implementing** the extension security mechanisms is conformant ([README §7](index.md#7-conformance), item 6).
 
-当前参考实现即此姿态：没有任何认证与授权代码，连接成功即视为可信对端（✅）；本页的其余机制全部是 🔵 规划。
+The current reference implementation holds exactly this posture: no authentication or authorization code at all, and a successful connection is treated as a trusted peer (✅); every remaining mechanism on this page is 🔵 planned.
 
-### 1.2 一句话对照表
+### 1.2 One-line comparison table
 
-| 部署形态 | 信任边界 | 需要什么 |
+| Deployment shape | Trust boundary | What is needed |
 |---|---|---|
-| localhost 自组网 | 同一 OS 用户 | 无需 TLS / 认证 / 授权 |
-| 跨机 / 公网 | 网络可达范围 | TLS + 节点认证 + 授权（默认只留应答通道） |
+| localhost self-organising network | The same OS user | No TLS / authentication / authorization |
+| Cross-machine / public network | The reachable extent of the network | TLS + node authentication + authorization (by default only the reply channel is left open) |
 
-> **安全是部署决策，不是协议默认值。** 因此 MSP 选择把边界说清楚，而不是给一个虚假的默认安全承诺。
+> **Security is a deployment decision, not a protocol default.** MSP therefore chooses to state the boundary plainly, rather than make a false default security promise.
 
 
-## 2. 模型与契约
+## 2. Model and contract
 
-### 2.1 认证 ≠ 授权
+### 2.1 Authentication ≠ authorization
 
-| | 问题 | 手段 | 局限 |
+| | Question | Means | Limitation |
 |---|---|---|---|
-| **认证** Authentication | 你是谁 | 证书 / 密钥 | 只能证明「你是 `node_b`」 |
-| **授权** Authorization | 你能做什么 | 本地策略表（`grants`） | 决定「`node_b` 能否调 `rm -rf` 工具」 |
+| **Authentication** | Who you are | Certificate / key | Can only prove "you are `node_b`" |
+| **Authorization** | What you may do | Local policy table (`grants`) | Decides "whether `node_b` may call the `rm -rf` tool" |
 
-证书**不能**证明 `node_b` 有权调某个危险工具：身份可信与行为可信是两件事。**认证通过**只意味着「这条连接确实来自 `node_b`」，它**不得**被当作「`node_b` 可以做任何事」的依据；反过来，未做认证也**不得**作为授权缺失的借口——两者**必须**独立配置、独立生效。
+A certificate **cannot** prove that `node_b` is entitled to call a particular dangerous tool: a trustworthy identity and trustworthy behaviour are two different things. **Passing authentication** only means "this connection really comes from `node_b`", and it **MUST NOT** be taken as grounds for "`node_b` may do anything"; conversely, the absence of authentication **MUST NOT** serve as an excuse for missing authorization either — the two **MUST** be configured independently and take effect independently.
 
-### 2.2 威胁模型
+### 2.2 Threat model
 
-| 攻击者 | 能干什么 | 对策 |
+| Attacker | What they can do | Countermeasure |
 |---|---|---|
-| 链路上的窃听 / 篡改者 | 读、改、重放消息 | TLS（§2.4.1） |
-| 未经认证就连接进来的节点 | 冒充任意 `node_id`，混入发现、搅乱去重、白嫖广播 | 节点认证（§2.4.2） |
-| 已认证但不可信的节点 | 调未开放的工具、`publish` 触发副作用、偷看广播 | 授权（§3） |
+| An eavesdropper / tamperer on the link | Read, modify and replay messages | TLS (§2.4.1) |
+| A node that connects without authenticating | Impersonate any `node_id`, slip into discovery, disturb deduplication, freeload on broadcasts | Node authentication (§2.4.2) |
+| An authenticated but untrusted node | Call tools that were not opened up, trigger side effects with `publish`, pry into broadcasts | Authorization (§3) |
 
-三类攻击者不是并列选项，而是纵深关系：只在**不可信链路**上才需要 TLS；只在**存在不属于同一信任域的对端**时才需要节点认证；只要对端已经连进来，就需要授权。**已认证**只抬高冒充成本，**不降低**任何一条授权检查的必要性。
+The three classes of attacker are not parallel options but a depth relationship: TLS is needed only on an **untrusted link**; node authentication is needed only when **a peer outside the same trust domain is present**; authorization is needed as soon as a peer has connected in. **Being authenticated** only raises the cost of impersonation and does **not reduce** the necessity of any single authorization check.
 
-### 2.3 本机自组网：为什么不做认证
+### 2.3 Local self-organising network: why there is no authentication
 
-MSP 面向的第一类场景是**本机自组织网络**：同一台机器上的一组进程 / 节点通过 localhost 互联，各自独立编组、共享发现注册表、互相广播。这种形态下做认证**没有意义**，因为每个节点的**权限集合相等**：
+The first class of scenario MSP targets is the **local self-organising network**: a group of processes / nodes on the same machine interconnected over localhost, each organising itself independently, sharing the discovery registry and broadcasting to one another. In this shape authentication is **meaningless**, because every node has the **same permission set**:
 
-- 所有节点跑在**同一个 OS 用户**之下，文件系统、网络端口、环境变量、进程信号的可达权限完全相同；
-- 一个节点能读到的、能调用的、能写到的，另一个节点同样能读到、调用、写到；
-- 加密通道（TLS）保护的是「传输途中」的机密性，而 localhost 回环**不经过不可信网络段**，没有中间人可拦。
+- All nodes run under the **same OS user**, so their reachable permissions on the file system, network ports, environment variables and process signals are exactly the same;
+- Whatever one node can read, call or write, another node can equally read, call and write;
+- An encrypted channel (TLS) protects confidentiality "in transit", while the localhost loopback **does not pass through an untrusted network segment**, so there is no man in the middle to intercept.
 
-> **认证一个和你权限相同的对端，等于认证你自己**——不增加任何真实的安全收益，只增加握手复杂度与部署成本。
+> **Authenticating a peer with the same permissions as yourself is authenticating yourself** — it adds no real security benefit, only handshake complexity and deployment cost.
 
-同一条推理也适用于授权：同一 OS 用户下，「允许 `node_b` 读某个文件」并不构成任何额外保护，因为 `node_b` 本就能直接读。**因此本机对端的整张授权表绕过、全量信任**（见 §3.5）。
+The same reasoning applies to authorization: under the same OS user, "allowing `node_b` to read a certain file" confers no extra protection, because `node_b` can read it directly anyway. **The whole authorization table is therefore bypassed for local peers, with full trust** (see §3.5).
 
-**边界条件**（此结论失效的情形）：跨 OS 用户、容器 / 沙箱隔离、虚拟化边界、以及 SSH 转发或代理把远端流量伪装成回环的场景。这些形态下「权限集合相等」的前提不成立，**必须**按跨机处理（§2.4）。
+**Boundary conditions** (where this conclusion lapses): crossing OS users, container / sandbox isolation, virtualisation boundaries, and scenarios in which SSH forwarding or a proxy disguises remote traffic as loopback. In these shapes the premise "the permission sets are equal" does not hold, so they **MUST** be handled as cross-machine (§2.4).
 
-### 2.4 跨机：安全随传输走
+### 2.4 Cross-machine: security follows the transport
 
-**状态**：🔵 规划中（设计已定稿，实现待排期）。
+**Status**: 🔵 planned (the design is final, implementation is to be scheduled).
 
-跨机暴露是**显式开启、默认关闭**的模式：节点默认只监听 localhost（✅ 事实），谁要跨机、谁自己去监听 `0.0.0.0`，并同时配好本节四项。安全模型是「**随传输走**」而不是「随协议走」的：当信任边界从同一 OS 用户扩大到网络可达范围，**必须**在**传输层之上、协议核心不动**的前提下补上四项；以下条文**实现者可以不实现，但一旦实现必须符合条文**。
+Cross-machine exposure is a mode that is **explicitly enabled and off by default**: by default a node listens on localhost only (✅ fact), and whoever wants to go cross-machine listens on `0.0.0.0` themselves and configures all four items of this section at the same time. The security model is one where security "**follows the transport**" rather than "follows the protocol": when the trust boundary widens from the same OS user to the reachable extent of the network, the four items **MUST** be added **above the transport layer, with the protocol core untouched**; for the provisions below, **an implementer MAY leave them unimplemented, but once implemented they MUST comply with the provisions**.
 
 #### 2.4.1 TLS
 
-- TLS **必须**以「包装 `Transport` / `Connection`」的方式实现：协议层只调 `Connection.send` / `receive`，因此 TLS 包装后**不得**要求 `core` 或协议层有任何改动。
-- 客户端**必须**校验证书链与主机名（`hostname` 校验）；**不得**使用 `CERT_NONE` / 跳过校验的调试开关进入生产配置。
-- 服务端**应当**要求并校验客户端证书（即 mTLS），与 §2.4.2 取法一配合使用。
-- 传输地址形态随之扩展：WebSocket 的 `ws://` 对应 `wss://`，裸 TCP 对应 `tls://` 或传输包装层显式开启的 TLS 模式（🔵，具体地址形态见 [transports.md](./transports.md)）。当前 `WebSocketTransport` 只接受 `ws://`（`_parse_url` 拒绝其他前缀）。
+- TLS **MUST** be implemented by "wrapping `Transport` / `Connection`": the protocol layer only calls `Connection.send` / `receive`, so once wrapped in TLS there **MUST NOT** be any required change to `core` or the protocol layer.
+- The client **MUST** verify the certificate chain and the host name (`hostname` verification); it **MUST NOT** bring `CERT_NONE` / verification-skipping debug switches into a production configuration.
+- The server **SHOULD** require and verify client certificates (i.e. mTLS), used together with the first option in §2.4.2.
+- The transport address forms extend accordingly: `ws://` for WebSocket corresponds to `wss://`, and bare TCP corresponds to `tls://` or a TLS mode explicitly enabled by the transport wrapper (🔵; for the concrete address forms see [transports.md](./transports.md)). The current `WebSocketTransport` accepts `ws://` only (`_parse_url` rejects other prefixes).
 
-#### 2.4.2 节点认证
+#### 2.4.2 Node authentication
 
-连接建立后**必须**校验对端身份，防未授权节点混入发现注册表或监听敏感命名空间。两种取法：
+Once a connection is established, the peer's identity **MUST** be verified, to prevent unauthorized nodes from slipping into the discovery registry or listening in on sensitive namespaces. Two options:
 
-| 取法 | 机制 | 适用 | 代价 |
+| Option | Mechanism | Applies to | Cost |
 |---|---|---|---|
-| **mTLS** | 证书 CN / SAN = `node_id`，双向校验 | 已有 PKI 的机房 | 需要证书签发与轮换流程 |
-| **签名 HELLO** | Ed25519 私钥签自己的 manifest，`node_id` 绑定公钥，显式 pin / TOFU + 人工确认 | P2P、免 PKI | 需要密钥分发与首连确认 |
+| **mTLS** | Certificate CN / SAN = `node_id`, mutual verification | Data centres that already have a PKI | Needs a certificate issuance and rotation process |
+| **Signed HELLO** | An Ed25519 private key signs the node's own manifest, `node_id` bound to the public key, explicit pin / TOFU + manual confirmation | P2P, no PKI required | Needs key distribution and first-connection confirmation |
 
-**默认倾向签名 HELLO**：它更贴合 P2P，免去 PKI 负担，且与 MSP「节点自述能力清单」的既有握手天然重合——签名对象就是manifest 本身，不需要额外的证书语义。
+**The default preference is signed HELLO**: it fits P2P better, removes the burden of a PKI, and naturally overlaps with MSP's existing handshake of "a node describes its own capability manifest" — the signed object is the manifest itself, so no additional certificate semantics are needed.
 
-**签名 HELLO 的报文定义**（字段见 §5.2）：
+**Message definition for signed HELLO** (fields in §5.2):
 
-1. 发起方在 `hello` 的 `payload.auth` 中携带 `scheme="ed25519"`、`nodeId`、`publicKey`、`nonce`、`timestamp`、`signature`。
-2. 接受方**必须**在 `ack` 的 `payload.auth` 中**回签**自己的 manifest（同样的字段与签名规则），使认证成为**双向**的；只做单侧认证的实现在本规范中不视为符合本节。
-3. **签名覆盖范围**：签名对象是下列字节串，收方**必须**用完全相同的规范化方式重建它（键排序、无多余空白、UTF-8）：
+1. The initiator carries `scheme="ed25519"`, `nodeId`, `publicKey`, `nonce`, `timestamp` and `signature` in the `payload.auth` of `hello`.
+2. The acceptor **MUST** **counter-sign** its own manifest (the same fields and signing rules) in the `payload.auth` of `ack`, making authentication **mutual**; an implementation that authenticates only one side is not regarded as conforming to this section in this specification.
+3. **Signature coverage**: the signed object is the byte string below, and the receiver **MUST** reconstruct it in exactly the same canonical form (sorted keys, no extra whitespace, UTF-8):
 
    ```text
    signing_bytes = utf8(json.dumps(
@@ -107,106 +107,106 @@ MSP 面向的第一类场景是**本机自组织网络**：同一台机器上的
        sort_keys=True, separators=(",", ":"), ensure_ascii=False))
    ```
 
-   即：签名**覆盖 manifest 全文**，防止中间人在握手后篡改能力声明；`nodeId`、`nonce`、`timestamp` 一并入签，防止字段替换与重放。
-4. **防重放**：`nonce` **必须**是至少 16 字节的不可预测随机值（十六进制编码）；`timestamp` 为 Unix 秒，收方**必须**拒绝偏离本地时钟超过 **±60 s** 的报文；收方**必须**在时间窗内缓存已见 `nonce` 并拒绝重复值。超出时间窗的 `nonce` 缓存**可以**丢弃。
-5. **TOFU 存储**：首次见到某 `node_id` 的公钥时，**应当**按 Trust On First Use 记录并标记为未确认，**应当**要求人工确认后才接受（或按部署策略直接拒绝，fail-closed）。记录已确认的 `node_id` 收到**不同公钥**时，**必须**拒绝连接并告警——这是密钥替换攻击（impersonation）的检出点。存储形态见 §5.3。
+    That is: the signature **covers the whole of the manifest**, preventing a man in the middle from tampering with the capability declaration after the handshake; `nodeId`, `nonce` and `timestamp` are signed alongside, preventing field substitution and replay.
+4. **Replay protection**: `nonce` **MUST** be an unpredictable random value of at least 16 bytes (hex-encoded); `timestamp` is Unix seconds, and the receiver **MUST** reject messages that deviate from the local clock by more than **±60 s**; within the time window the receiver **MUST** cache `nonce` values already seen and reject repeats. A `nonce` cache beyond the time window **MAY** be discarded.
+5. **TOFU storage**: on first seeing the public key of a `node_id`, it **SHOULD** be recorded per Trust On First Use and marked unconfirmed, and **SHOULD** require manual confirmation before being accepted (or be rejected outright under the deployment policy, fail-closed). When a confirmed `node_id` record receives a **different public key**, it **MUST** reject the connection and raise an alarm — this is the detection point for a key-substitution (impersonation) attack. For the storage shape see §5.3.
 
-#### 2.4.3 身份绑定
+#### 2.4.3 Identity binding
 
-- `hello` 中声明的 `node_id`（`Signal.source`）**必须**与 TLS 证书身份或签名密钥身份一致；不一致就断开。
-- 校验**必须**发生在**登记连接之前**：未通过身份绑定的连接**不得**进入 `connections`、**不得**写入 `peer_manifests`、**不得**产生发现事件。
-- 不绑定会导致两类破坏：
-  1. **发现注册表污染**：声明文件按 `node_id` 命名，扫描侧以 `_known[node_id]` 为去重键。冒充者可用他人的 `node_id` 覆写声明，把对端流量引向自己的地址，或让真实节点被判定为「声明未变」而永不刷新。
-  2. **去重紊乱**：重复连接去重的「规范方向」由 `node_id` 的字典序决定（`self.node_id < peer_id` 的一方为发起方）。冒充者随意挑选 `node_id`，就能让规范方向在两条连接间来回翻转，形成持续重连与状态抖动。
+- The `node_id` declared in `hello` (`Signal.source`) **MUST** coincide with the TLS certificate identity or the signing-key identity; on a mismatch, disconnect.
+- Verification **MUST** take place **before the connection is registered**: a connection that fails identity binding **MUST NOT** enter `connections`, **MUST NOT** be written into `peer_manifests`, and **MUST NOT** produce discovery events.
+- Not binding leads to two kinds of damage:
+  1. **Discovery registry poisoning**: declaration files are named by `node_id`, and the scanning side uses `_known[node_id]` as the deduplication key. An impersonator can overwrite another party's declaration with that party's `node_id`, steering peer traffic to its own address, or causing the real node to be judged "declaration unchanged" and so never refreshed.
+  2. **Deduplication disorder**: the "canonical direction" of duplicate-connection deduplication is decided by the lexicographic order of `node_id` (the side with `self.node_id < peer_id` is the initiator). By picking `node_id` freely, an impersonator can make the canonical direction flip back and forth between two connections, producing continuous reconnection and state flapping.
 
-#### 2.4.4 授权
+#### 2.4.4 Authorization
 
-见 §3。
+See §3.
 
 
-## 3. 授权
+## 3. Authorization
 
-> **状态**：✅ 已实现（`src/msp/core/grants.py`）。两个执行点是 `MSPProtocol.authorized()`（入站，`_dispatch` 的第一条语句）与 `grant_sub()`（出站扇出）。本节定义授权表 `grants`。
+> **Status**: ✅ implemented (`src/msp/core/grants.py`). The two enforcement points are `MSPProtocol.authorized()` (inbound, the first statement of `_dispatch`) and `grant_sub()` (outbound fan-out). This section defines the authorization table `grants`.
 
-### 3.1 授权与能力分离
+### 3.1 Authorization is separate from capability
 
-能力位（`pub` / `sub` / `req` / `rep`）在 `Manifest` 里，是「**我自称会什么**」；授权在**本地策略**里（落点见 §3.2），是「**我允许对端做什么**」（[README §5.5](index.md#55-角色能力位)）。
+The capability bits (`pub` / `sub` / `req` / `rep`) live in the `Manifest` and are "**what I claim I can do**"; authorization lives in the **local policy** (landing point in §3.2) and is "**what I allow the peer to do**" ([README §5.5](index.md#55-role-capability-bits)).
 
-- 授权**不得**依赖对端自报：对端把 `capabilities` 写成 `["pub","sub","req","rep"]` 不产生任何权限。
-- 授权**不得**随清单交换：`grants` 是本地策略，**不得**出现在 `Manifest` 的任何字段里，也**不得**由 `manifest_update` 更新。
-- 对端能力位**可以**用于本地优化（例如知道对端不支持 `msp/task` 就不必尝试），但**不得**用于授权判定。
+- Authorization **MUST NOT** depend on what the peer reports: writing `capabilities` as `["pub","sub","req","rep"]` confers no permission at all.
+- Authorization **MUST NOT** be exchanged with the manifest: `grants` is local policy, **MUST NOT** appear in any field of the `Manifest`, and **MUST NOT** be updated by `manifest_update`.
+- Peer capability bits **MAY** be used for local optimisation (for example, knowing that a peer does not support `msp/task` means there is no point in trying), but **MUST NOT** be used for authorization decisions.
 
-### 3.2 授权表的声明位置
+### 3.2 Where the authorization table is declared
 
-授权表是**本地策略**，在构造节点时注入，**不得**出现在 `Manifest` 的任何字段里。**规范性要求只有三条**：本地策略、不进清单、不能被对端自报影响；**落点由实现自选**——参考实现放在节点配置 `config["grants"]`（`node.py` → `MSPProtocol(grants=...)`），把它放进节点角色预设（`Preset` 式）同样合规。
+The authorization table is **local policy**, injected when the node is constructed, and **MUST NOT** appear in any field of the `Manifest`. **There are only three normative requirements**: local policy, not in the manifest, and not influenced by what the peer reports about itself; **the landing point is the implementation's choice** — the reference implementation puts it in the node configuration `config["grants"]` (`node.py` → `MSPProtocol(grants=...)`), and putting it in a node role preset (in `Preset` style) is equally conformant.
 
-解析**必须** fail-closed：配置读不懂就**应当**让节点起不来，**不得**按「读不懂就放行」处理；唯一例外是整张表缺失——那按 §3.5 的默认姿态（全拒 + `rep` 通道）处理。
+Parsing **MUST** fail closed: if the configuration cannot be understood, the node **SHOULD** be made unable to start, and it **MUST NOT** be handled as "if unreadable, let it through"; the sole exception is the whole table being absent — that is handled by the default posture of §3.5 (deny everything + the `rep` channel).
 
 ```python
-# 本地策略（不随 manifest 交换）
+# Local policy (not exchanged with the manifest)
 grants = {
-    # 未列明的任何对端：默认只留应答通道
+    # Any peer not listed: by default only the reply channel is left open
     "*":      {"req": [],            "pub": False, "sub": False, "rep": True},
-    # 逐 peer 覆盖
+    # Per-peer override
     "node_b": {"req": True,          "pub": ["notify.**"], "sub": ["metric.**"], "rep": True},
     "node_c": {"req": ["read_file"], "pub": False, "sub": False, "rep": True},
 }
 ```
 
-查找规则：先按对端 `node_id` 精确匹配，命中则用该条；未命中则回退到 `"*"`。若 `"*"` 也不存在，**必须**按全部拒绝处理（`req=[]`、`pub=False`、`sub=False`、`rep=True`，即 §3.5 的默认姿态），**不得**按全部允许处理。逐 peer 覆盖是**整条替换**，不是逐字段合并：`node_c` 未写 `rep` 时，`rep` 取该条目自身的缺省值 `True`。
+Lookup rule: first match the peer's `node_id` exactly and use that entry if it hits; otherwise fall back to `"*"`. If `"*"` is absent too, it **MUST** be treated as deny-everything (`req=[]`, `pub=False`, `sub=False`, `rep=True`, i.e. the default posture of §3.5), and **MUST NOT** be treated as allow-everything. A per-peer override is a **whole-entry replacement**, not a field-by-field merge: when `node_c` omits `rep`, `rep` takes that entry's own default value, `True`.
 
-### 3.3 四个动作
+### 3.3 The four actions
 
-| 动作 | 语义 | 授权主体 | 匹配方式 | 默认 |
+| Action | Semantics | Authorization subject | Matching | Default |
 |---|---|---|---|---|
-| `req` | 允许它调我的工具 | 工具名列表 | 精确匹配（`True` = 全部） | `[]`：一个都不给 |
-| `pub` | 允许它的 publish 触发我的 `on()` | path 模式列表 | 复用 `pattern_matches` | `False` |
-| `sub` | 允许它收我的广播 | path 模式列表 | 复用 `pattern_matches` | `False` |
-| `rep` | 允许它的应答（`tool_result`）进来 | 布尔 | 不分工具 | `True` |
+| `req` | Allow it to call my tools | List of tool names | Exact match (`True` = all) | `[]`: none at all |
+| `pub` | Allow its `publish` to trigger my `on()` | List of path patterns | Reuses `pattern_matches` | `False` |
+| `sub` | Allow it to receive my broadcasts | List of path patterns | Reuses `pattern_matches` | `False` |
+| `rep` | Allow its replies (`tool_result`) in | Boolean | Not per tool | `True` |
 
-逐条说明：
+Item by item:
 
-- **`req`**：`True` 表示全部工具；列表表示白名单，按工具名**精确匹配**（`[a-z0-9_-]+`，见 [README §5.3](index.md#53-命名规范)）——**不得**把工具名当路径做通配匹配。空列表表示一个都不给。`req` **不**影响本节点主动发起的 `call()`。
-- **`pub`**：对端 `signal` 信号的 `path` **必须**匹配列表中至少一个模式，回调才会被触发；否则该信号被丢弃（不回 `on()`）。模式匹配**必须**复用 [publish-subscribe](./patterns/publish-subscribe.md) 定义的 `pattern_matches(pattern, path)`，**不得**另立匹配算法。注意 `"notify.**"` 同时放行路径恰为 `notify` 的信号。
-- **`sub`**：本节点 `publish()` 时，按对端逐个判定：对端**可以**收到本次广播，当且仅当 `path` 匹配该对端 `sub` 列表中的至少一个模式。`False` 表示一个都不发。
-- **`rep`**：布尔，不分工具、不分 `reqid` 归属之外的条件；`True` 表示对端的 `tool_result` **可以**进入本地的 `reqid` 匹配流程。
+- **`req`**: `True` means all tools; a list means a whitelist, matched **exactly** by tool name (`[a-z0-9_-]+`, see [README §5.3](index.md#53-naming-rules)) — a tool name **MUST NOT** be treated as a path for wildcard matching. An empty list means none at all. `req` does **not** affect `call()` initiated by this node itself.
+- **`pub`**: the `path` of a peer's `signal` **MUST** match at least one pattern in the list before the callback is triggered; otherwise the signal is dropped (no `on()`). Pattern matching **MUST** reuse `pattern_matches(pattern, path)` as defined in [publish-subscribe](./patterns/publish-subscribe.md), and **MUST NOT** establish a separate matching algorithm. Note that `"notify.**"` also lets through a signal whose path is exactly `notify`.
+- **`sub`**: when this node calls `publish()`, the decision is made peer by peer: a peer **MAY** receive this broadcast if and only if `path` matches at least one pattern in that peer's `sub` list. `False` means nothing is sent to it.
+- **`rep`**: a boolean, not per tool and with no condition beyond `reqid` ownership; `True` means the peer's `tool_result` **MAY** enter the local `reqid` matching flow.
 
-**取值域约束**：`pub` / `sub` 的取值**必须**是 `False` 或**非空字符串列表**。列表元素**不得**在中间使用通配符（仅允许精确、`前缀.*`、`前缀.**`），因为 `pattern_matches` 对中间通配符返回 `False`；实现**应当**在加载策略时校验并拒绝这类配置（fail-closed）。本修订**不**为 `pub` / `sub` 定义「单个模式全量放行」的写法：`pattern_matches` 要求通配符带前缀，裸 `*` 与裸 `**` 匹配不到任何 path，要全量放行需逐一列举域前缀（如 `["notify.**", "metric.**"]`）。
+**Value-domain constraints**: the values of `pub` / `sub` **MUST** be `False` or a **non-empty list of strings**. List elements **MUST NOT** use a wildcard in the middle (only exact, `prefix.*` and `prefix.**` are allowed), because `pattern_matches` returns `False` for a middle wildcard; an implementation **SHOULD** validate and reject such a configuration when loading the policy (fail-closed). This revision does **not** define a "single pattern allows everything" spelling for `pub` / `sub`: `pattern_matches` requires a wildcard to carry a prefix, so bare `*` and bare `**` match no path, and allowing everything requires listing the domain prefixes one by one (such as `["notify.**", "metric.**"]`).
 
-### 3.4 `rep` 为什么与前三个不是一类
+### 3.4 Why `rep` is not in the same class as the other three
 
-**`req` / `pub` / `sub` 是对它的限制**——关掉就是不许它主动对我做什么；**`rep` 是我留给自己的通道**——由我发起、它应答的交互（`call()` 的返回值）默认放行。
+**`req` / `pub` / `sub` are restrictions on it** — turning them off means it may not do anything to me on its own initiative; **`rep` is the channel I keep for myself** — interactions that I initiate and it answers (the return value of `call()`) are allowed by default.
 
-所以「默认 rep-only」的准确含义是：**默认状态下对端在我面前只能当应答方——我不能靠它主动，但我随时能靠它**。
+So "rep-only by default" means precisely this: **by default the peer can only be a responder in my presence — I cannot rely on it to act on its own initiative, but I can rely on it at any time**.
 
-把 `rep` 显式写成 `True` 是刻意的，有两个作用：
+Writing `rep` explicitly as `True` is deliberate, and serves two purposes:
 
-1. 让「默认姿态」在表里**看得见**：读者一眼能看出默认不是「全拒」，而是「只留我发起的通道」；
-2. 避免实现时把「应答」误当成「请求」一并拒掉——`tool_result` 与 `tool_call` 是同一交互的两半，若把默认姿态简化成「未授权即全拒」，`call()` 会永久超时，且表现为难以定位的静默失败。
+1. It makes the "default posture" **visible** in the table: the reader sees at a glance that the default is not "deny everything" but "keep only the channel I initiate";
+2. It prevents an implementation from mistaking "replies" for "requests" and rejecting them together — `tool_result` and `tool_call` are the two halves of one interaction, and simplifying the default posture into "unauthorized means deny everything" makes `call()` time out forever, showing up as a silent failure that is hard to trace.
 
-### 3.5 默认值与作用域
+### 3.5 Defaults and scope
 
-- `"*"` 即**网络对端**的默认姿态：`req` 空白名单（什么都不暴露，显式加一个工具名才开放一个）、`pub` 拒绝、`sub` 拒绝、`rep` 放行。
-- **本机（loopback / UDS 同用户）整张表绕过、全量信任**；只有跨机对端走这张表。
-- **本机判定规则**（🔵）：一条入站连接**应当**被判定为本机，当且仅当其传输后端为 `uds`，或其 TCP / WebSocket 地址的 host 属于 `127.0.0.0/8`、`::1`、`localhost`。判定**必须**基于**本端已建立的连接**与其对端地址，**不得**依赖对端在 `hello` 里自报的任何字段。
+- `"*"` is the default posture for **network peers**: `req` with an empty whitelist (nothing exposed; a tool is opened only by adding its name explicitly), `pub` denied, `sub` denied, `rep` allowed.
+- **Local (loopback / UDS under the same user): the whole table is bypassed, with full trust**; only cross-machine peers go through this table.
+- **Local determination rule** (🔵): an inbound connection **SHOULD** be judged local if and only if its transport backend is `uds`, or the host in its TCP / WebSocket address belongs to `127.0.0.0/8`, `::1` or `localhost`. The determination **MUST** be based on the **connection already established at the local end** and its peer address, and **MUST NOT** depend on any field the peer reports in `hello`.
 
-### 3.6 执行点：只有两处
+### 3.6 Enforcement points: only two
 
-授权检查的执行点**只有两处**，其余路径**不得**重复实现，也**不得**绕过。`core` 仍然只认 `Signal`。
+Authorization checks have **only two** enforcement points, and every other path **MUST NOT** reimplement them and **MUST NOT** bypass them. `core` still recognises only `Signal`.
 
-**入站**（`_dispatch(peer_id, sig)`，必须是该函数的第一条语句）：
+**Inbound** (`_dispatch(peer_id, sig)`, which **MUST** be the first statement of that function):
 
 ```python
 def _dispatch(self, peer_id: str, msg: Signal) -> None:
-    if not self._authorized(peer_id, msg):     # 🔵 授权检查：必须是第一行
-        self._reject(peer_id, msg)             # 丢弃，或回 error（见 §6）
+    if not self._authorized(peer_id, msg):     # 🔵 authorization check: MUST be the first line
+        self._reject(peer_id, msg)             # drop, or reply with error (see §6)
         return
-    # ... 核心信号分发 / pattern 路由照旧
+    # ... core signal dispatch / pattern routing as before
 
 def _authorized(self, peer_id: str, msg: Signal) -> bool:
-    if self._is_local(peer_id):                # 本机 bypass：整张表绕过
+    if self._is_local(peer_id):                # local bypass: the whole table is skipped
         return True
-    g = self._grants_for(peer_id)              # 逐 peer 覆盖，否则 "*"
+    g = self._grants_for(peer_id)              # per-peer override, otherwise "*"
     t = msg.type
     if t == SignalType.TOOL_CALL:              # req
         return g["req"] is True or msg.payload.get("tool") in g["req"]
@@ -215,10 +215,10 @@ def _authorized(self, peer_id: str, msg: Signal) -> bool:
         return bool(pats) and any(pattern_matches(p, msg.path or "") for p in pats)
     if t == SignalType.TOOL_RESULT:            # rep
         return bool(g["rep"])
-    return True                                # 其余信号类型不受本表管辖
+    return True                                # other signal types are outside this table
 ```
 
-**出站**（`publish()` 的扇出循环）：
+**Outbound** (the fan-out loop of `publish()`):
 
 ```python
 def publish(self, path: str, payload: dict) -> None:
@@ -226,120 +226,120 @@ def publish(self, path: str, payload: dict) -> None:
                       path=path, payload=payload)
     for peer_id, conn in list(self.connections.items()):
         if not self._is_local(peer_id) and not self._grant_sub(peer_id, path):
-            continue                           # 🔵 sub 未授权：跳过该对端
+            continue                           # 🔵 sub not authorized: skip this peer
         try:
             conn.send(self._encode(msg))
         except ConnectionClosed:
             self._handle_disconnect(peer_id, conn)
 ```
 
-`sub` 只筛选**收件人**，**不改变**报文内容：实现**不得**为不同对端生成内容不同的广播副本，否则同一时刻不同观测者看到的信号不一致，「广播」语义即被破坏。
+`sub` filters **recipients** only and **does not change** the message content: an implementation **MUST NOT** generate broadcast copies with different content for different peers, otherwise observers would see inconsistent signals at the same moment and the "broadcast" semantics would be broken.
 
-### 3.7 与广播模型的张力
+### 3.7 Tension with the broadcast model
 
-广播模型下没有订阅表——`publish` 把信号发给所有已连对端，接收方用 `on()` 做本地匹配。`sub` 授权是**发送侧的扇出过滤**，于是「广播 = 全发」与「不让未授权者看」在这里冲突。
+Under the broadcast model there is no subscription table — `publish` sends the signal to every connected peer, and the receiver does local matching with `on()`. `sub` authorization is a **sender-side fan-out filter**, so "broadcast = send to all" and "keep it from unauthorized eyes" conflict here.
 
-它与已删除的订阅表**形状相似但性质不同**：
+It is **similar in shape but different in nature** from the deleted subscription table:
 
-- 订阅表回答「谁**想**要」，目的是带宽优化，违约后果只是多收几条无用信号；
-- `sub` 授权回答「谁**能**看」，目的是安全，违约后果是信息泄露。
+- The subscription table answered "who **wants** it"; its purpose was bandwidth optimisation, and a breach only meant a few more useless signals received;
+- `sub` authorization answers "who **may** see it"; its purpose is security, and a breach means an information leak.
 
-**故按安全需要加回 per-peer 过滤，不掺带宽优化**：`sub` 的判定依据**必须**只有授权表，**不得**因为对端「没订阅过这个 path」就跳过——那会把安全策略退化成带宽策略，也会让「广播」在观测上不可预测。
+**Per-peer filtering is therefore added back for security, with no bandwidth optimisation mixed in**: the sole basis for a `sub` decision **MUST** be the authorization table, and a peer **MUST NOT** be skipped because it "never subscribed to this path" — that would degrade a security policy into a bandwidth policy, and would also make "broadcast" unpredictable in observation.
 
-### 3.8 顺序要求
+### 3.8 Ordering requirements
 
-- 授权检查**必须**位于 `_dispatch` 的**第一条语句**，**先于**核心信号分发、**先于** `pattern` 路由、**先于**任何入队或起线程的动作。
-- `_read_loop` **不得**在调用 `_dispatch` 之前处理任何会改变本地状态的消息（仅允许刷新 `_last_seen` 心跳时间戳）。
-- 新增信号类型、新增通讯模式、新增传输后端时，**不得**绕开 `_dispatch` 直接调用模式处理器或工具表；否则授权即失效——这是本页最关键的一条实现约束。
+- The authorization check **MUST** be the **first statement** of `_dispatch`, **before** core signal dispatch, **before** `pattern` routing, and **before** any enqueueing or thread start.
+- `_read_loop` **MUST NOT** process any message that changes local state before calling `_dispatch` (only refreshing the `_last_seen` heartbeat timestamp is allowed).
+- When a signal type, communication pattern or transport backend is added, it **MUST NOT** bypass `_dispatch` to call pattern handlers or the tool table directly; otherwise authorization lapses — this is the most critical implementation constraint on this page.
 
-### 3.9 模式私有信号的授权归属
+### 3.9 Authorization ownership of pattern-private signals
 
-授权表受管辖的只有三个**核心类型**：`tool_call`（`req`）、`signal`（`pub`）、`tool_result`（`rep`）。连接机制类（`hello` / `ack` / `ping` / `pong` / `error` / `manifest_update`）不受管辖——它们不触发任何动作。
+The authorization table governs only three **core types**: `tool_call` (`req`), `signal` (`pub`) and `tool_result` (`rep`). The connection-mechanism messages (`hello` / `ack` / `ping` / `pong` / `error` / `manifest_update`) are not governed — they trigger no action.
 
-其余信号（模式私有类型）**没有默认通道**：**必须**由注册的模式显式声明归属，**未声明即拒绝**。实现**必须**提供 `PatternHandler.authorize(entry, sig) -> bool` 作为扩展点，且其**默认实现返回 `False`**。
+The remaining signals (pattern-private types) have **no default channel**: their ownership **MUST** be declared explicitly by the registered pattern, and **whatever is not declared is rejected**. An implementation **MUST** provide `PatternHandler.authorize(entry, sig) -> bool` as the extension point, and its **default implementation returns `False`**.
 
-本节存在的全部理由：新增一个模式或一种信号类型时，忘记归类的后果**必须**是「被拒绝」而**不得**是「默认放行」。参考实现的映射：
+The entire reason this section exists: when a new pattern or a new signal type is added, forgetting to classify it **MUST** result in "rejected" and **MUST NOT** result in "allowed by default". The reference implementation's mapping:
 
-| 模式 | 信号 | 通道 |
+| Pattern | Signal | Channel |
 |---|---|---|
-| `msp/task` | `task_submit` | `req`：`payload.task` 视同工具名做**精确匹配**（与 `tool_call` 同一白名单、同一匹配语义） |
-| `msp/task` | `task_query` / `task_cancel` | `req`：要求该对端有**任意** `req` 权利；具体归属另由记录上的 `client_id` 判定把关 |
-| `msp/task` | `task_status` / `task_artifact` / `task_result` / `input_required` / `input_response` / 各 `*_result` 回执 | `rep`：都是「我允许你把结果回给我」这条通道 |
+| `msp/task` | `task_submit` | `req`: `payload.task` is treated like a tool name for **exact matching** (the same whitelist and the same matching semantics as `tool_call`) |
+| `msp/task` | `task_query` / `task_cancel` | `req`: requires that peer to hold **any** `req` right; the specific ownership is additionally gated by the `client_id` on the record |
+| `msp/task` | `task_status` / `task_artifact` / `task_result` / `input_required` / `input_response` / each `*_result` receipt | `rep`: all of them are the channel "I allow you to hand results back to me" |
 | `msp/multi-round` | `input_required` / `input_response` | `rep` |
-| `msp/multi-round` | `tool_call` / `tool_result` | 复用核心类型名，由协议层按 `req` / `rep` 直接判定，不经模式 |
+| `msp/multi-round` | `tool_call` / `tool_result` | Reuses the core type names; decided directly by the protocol layer as `req` / `rep`, without going through the pattern |
 
-模式**不得**无条件返回 `True`：那等于让任何新起的信号类型名自动获得「免授权」地位，`req` 白名单随之失效。协议层对「没有任何处理器会对其动作」的类型仍**可以**放行到核心分发（由它回 `-32600`）——放行不产生副作用，却能让「我不认识这个类型」与「你没权限」在排障上可区分。
+A pattern **MUST NOT** return `True` unconditionally: that would give any newly introduced signal type name an automatic "authorization-free" status, and the `req` whitelist would lapse with it. The protocol layer **MAY** still let through to core dispatch a type "that no handler acts on" (which replies `-32600`) — letting it through produces no side effect, yet it makes "I do not recognise this type" distinguishable from "you lack permission" when troubleshooting.
 
-### 3.10 写方向的来源校验
+### 3.10 Source verification on the write direction
 
-授权判定回答的是「**你是否有资格跟我说话**」，它**不能**替代「**这条消息是不是关于你自己的那件事**」。
+An authorization decision answers "**are you entitled to talk to me**"; it **cannot** substitute for "**is this message about your own business**".
 
-- 事务归属**必须**按**连接身份**（握手后由本地连接确定的 `peer_id`）判定，**不得**用 `Signal.source`——后者是对端自报字段，攻击者把它填成受害者的 `node_id` 就绕过了。
-- 典型反例：`task_status` / `task_artifact` / `task_result` 携带 `taskId`，而 `task.<id>.**` 旁观广播会把 `task_id` 发给**所有**已连对端（见 [task](patterns/task.md) §7）。因此「id 猜不到」不构成防线，**必须**校验发送方就是该任务的执行者。读方向（`task_query` / `task_cancel` 的 `client_id` 判定）与写方向（执行者判定）**必须**对称。
-- 同理，`msp/multi-round` 的 `reqid` 在参考实现里是 `mr-<n>`（可预测），其追问与应答**必须**校验来源，**不得**只凭 `reqid` 命中就接受。`reqid` **不得**被当作安全令牌。
+- Transaction ownership **MUST** be decided by the **connection identity** (the `peer_id` determined locally after the handshake), and **MUST NOT** use `Signal.source` — the latter is a field the peer reports about itself, and an attacker who fills it with the victim's `node_id` gets around the check.
+- A typical counter-example: `task_status` / `task_artifact` / `task_result` carry a `taskId`, while the `task.<id>.**` observer broadcast sends `task_id` to **every** connected peer (see [task](patterns/task.md) §7). So "the id cannot be guessed" is no defence: the sender **MUST** be verified to be that task's executor. The read direction (`client_id` checks on `task_query` / `task_cancel`) and the write direction (executor checks) **MUST** be symmetric.
+- Likewise, in the reference implementation the `reqid` of `msp/multi-round` is `mr-<n>` (predictable), so its follow-up questions and replies **MUST** verify the source, and **MUST NOT** be accepted merely because the `reqid` hits. `reqid` **MUST NOT** be treated as a security token.
 
 
-## 4. 消息流
+## 4. Message flows
 
-### 4.1 入站 `req` 检查拦下未开放的工具（主图）
+### 4.1 Inbound `req` check stops tools that were not opened up (main diagram)
 
 ```text
-node_b（已通过节点认证）              node_a（本节点；grants["node_b"].req = ["read_file"]）
+node_b (node authenticated)  node_a (this node; grants["node_b"].req = ["read_file"])
         │                                      │
         │ ── tool_call {tool:"rm_rf"} ────────▶│  ① _read_loop: conn.receive() → Signal
-        │    reqid="9f2c…"                     │  ② _dispatch("node_b", sig)  ← 第一行查授权
+        │    reqid="9f2c…"                     │  ② _dispatch("node_b", sig)  ← authorization checked on line 1
         │    pattern="msp/request-reply"       │  ③ _authorized: "rm_rf" ∉ ["read_file"]
-        │                                      │     → 拒绝
-        │                                      │  ④ 不入队、不起执行线程
-        │                                      │     （工具函数从未被调用，无副作用）
-        │ ◀── error {code:-32000, reqid:…} ────│  （可选；也可静默丢弃，见 §6）
+        │                                      │     → rejected
+        │                                      │  ④ not queued, no execution thread started
+        │                                      │     (the tool function is never called, no side effects)
+        │ ◀── error {code:-32000, reqid:…} ────│  (optional; may also be dropped silently, see §6)
         │                                      │
-        │ ── tool_call {tool:"read_file"} ────▶│  ⑤ 白名单命中 → 通过 → _on_tool_call
-        │ ◀── tool_result {content:[…]} ───────│  ⑥ 正常执行并回包
+        │ ── tool_call {tool:"read_file"} ────▶│  ⑤ whitelist hit → pass → _on_tool_call
+        │ ◀── tool_result {content:[…]} ───────│  ⑥ executes normally and replies
         │                                      │
-    ── 认证只回答「你是 node_b」；本图里 node_b 确实是 node_b，但 rm_rf 依然被拒 ──
+    ── Authentication only answers "you are node_b"; in this diagram node_b really is node_b, yet rm_rf is still rejected ──
 ```
 
-对照：若第 ③ 步被删掉，第 ④ 步就会变成「起线程执行 `rm_rf`」——**认证通过**丝毫不减这一步的必要性。
+Contrast: if step ③ were deleted, step ④ would become "start a thread and execute `rm_rf`" — **passing authentication** does not reduce the necessity of this step in the slightest.
 
-### 4.2 出站 `sub` 过滤
+### 4.2 Outbound `sub` filtering
 
-`node_a.publish("metric.cpu", …)` 扇出时：`node_b` 的 `sub=["metric.**"]` 命中 → 发送；`node_c` 的 `sub=False` → 跳过（`node_c` 永远看不到这条广播）；本机对端 → 绕过整张表，直接发送。
+When `node_a.publish("metric.cpu", …)` fans out: `node_b`'s `sub=["metric.**"]` hits → sent; `node_c`'s `sub=False` → skipped (`node_c` never sees this broadcast); a local peer → bypasses the whole table and is sent to directly.
 
-### 4.3 跨机签名 HELLO 握手（🔵）
+### 4.3 Cross-machine signed HELLO handshake (🔵)
 
-顺序是：TLS 建立（§2.4.1）→ `hello` 携带 `payload.auth` → 接受方验签、查时间窗与 `nonce` 重用、判定身份绑定（§2.4.3）→ 查 TOFU 存储（公钥变化即拒绝）→ 全部通过后才登记连接 → `ack` 回签 → 发起方对称验签。任一步失败：**必须**关闭连接，且**不得**登记 `peer_id`、**不得**写入 `peer_manifests`、**不得**触发 `on_connected`。
+The order is: TLS is established (§2.4.1) → `hello` carries `payload.auth` → the acceptor verifies the signature, checks the time window and `nonce` reuse, and decides identity binding (§2.4.3) → checks the TOFU store (a changed public key means rejection) → the connection is registered only after everything passes → `ack` counter-signs → the initiator verifies symmetrically. If any step fails: the connection **MUST** be closed, and `peer_id` **MUST NOT** be registered, **MUST NOT** be written into `peer_manifests`, and `on_connected` **MUST NOT** be triggered.
 
 
-## 5. 数据类型
+## 5. Data types
 
-### 5.1 授权表条目
+### 5.1 Grant entry
 
-| 字段 | 类型 | 必填 | 默认 | 语义 |
+| Field | Type | Required | Default | Semantics |
 |---|---|---|---|---|
-| `req` | `boolean` \| `array<string>` | 否 | `[]` | `true` = 全部工具；数组 = 工具名白名单 |
-| `pub` | `boolean` \| `array<string>` | 否 | `false` | `false` = 全拒；数组 = 放行的 path 模式 |
-| `sub` | `boolean` \| `array<string>` | 否 | `false` | 同上，用于出站扇出 |
-| `rep` | `boolean` | 否 | `true` | 是否接受该对端的 `tool_result` |
+| `req` | `boolean` \| `array<string>` | no | `[]` | `true` = all tools; array = tool-name whitelist |
+| `pub` | `boolean` \| `array<string>` | no | `false` | `false` = deny all; array = path patterns allowed |
+| `sub` | `boolean` \| `array<string>` | no | `false` | As above, for outbound fan-out |
+| `rep` | `boolean` | no | `true` | Whether to accept that peer's `tool_result` |
 
-表本身的类型是 `map<node_id, GrantEntry>`，键 `"*"` 保留为默认条目，其余键**必须**是合法 `node_id`（`[a-z0-9_-]+`）。
+The table's own type is `map<node_id, GrantEntry>`; the key `"*"` is reserved as the default entry, and every other key **MUST** be a valid `node_id` (`[a-z0-9_-]+`).
 
-### 5.2 `hello` / `ack` 的 `payload.auth`（🔵）
+### 5.2 `payload.auth` of `hello` / `ack` (🔵)
 
-| 字段 | 类型 | 必填 | 语义 |
+| Field | Type | Required | Semantics |
 |---|---|---|---|
-| `scheme` | `string` | 是 | 固定 `"ed25519"`（本修订只定义这一种） |
-| `nodeId` | `string` | 是 | **必须**等于 `Signal.source`，且等于证书 / 密钥绑定的身份 |
-| `publicKey` | `string` | 是 | Ed25519 原始 32 字节公钥的 Base64 编码 |
-| `nonce` | `string` | 是 | ≥ 16 字节随机值的十六进制编码，防重放 |
-| `timestamp` | `number` | 是 | Unix 秒，用于 ±60 s 时间窗 |
-| `signature` | `string` | 是 | 对 §2.4.2 定义的 `signing_bytes` 的 Ed25519 签名的 Base64 编码 |
+| `scheme` | `string` | yes | Fixed `"ed25519"` (this revision defines only this one) |
+| `nodeId` | `string` | yes | **MUST** equal `Signal.source`, and equal the identity bound to the certificate / key |
+| `publicKey` | `string` | yes | Base64 encoding of the raw 32-byte Ed25519 public key |
+| `nonce` | `string` | yes | Hex encoding of a random value ≥ 16 bytes, for replay protection |
+| `timestamp` | `number` | yes | Unix seconds, used for the ±60 s time window |
+| `signature` | `string` | yes | Base64 encoding of the Ed25519 signature over the `signing_bytes` defined in §2.4.2 |
 
-未实现节点认证的实现**应当**忽略 `auth` 字段（[宽容读取](index.md#7-一致性)），**不得**因出现未知字段而断开连接。
+An implementation that does not implement node authentication **SHOULD** ignore the `auth` field ([lenient reading](index.md#7-conformance)), and **MUST NOT** disconnect because an unknown field appears.
 
-### 5.3 TOFU 存储（🔵）
+### 5.3 TOFU storage (🔵)
 
-默认路径 `~/.msp/known_nodes.json`（与共享目录 `~/.msp/nodes/` 同级）：
+Default path `~/.msp/known_nodes.json` (a sibling of the shared directory `~/.msp/nodes/`):
 
 ```json
 {
@@ -352,101 +352,101 @@ node_b（已通过节点认证）              node_a（本节点；grants["node
 }
 ```
 
-`confirmed=false` 表示尚未人工确认（TOFU 首连）；`confirmed=true` 的条目遇到不同 `publicKey` **必须**拒绝连接并告警。
+`confirmed=false` means not yet manually confirmed (the TOFU first connection); an entry with `confirmed=true` that meets a different `publicKey` **MUST** reject the connection and raise an alarm.
 
-### 5.4 本机判定（🔵）
+### 5.4 Local determination (🔵)
 
-对端为 `uds` 后端时一律视为本机；`tcp` / `websocket` 后端的对端地址 host 属于 `127.0.0.0/8`、`::1`、`localhost` 时同样视为本机。判定**必须**基于本端已建立的连接与其对端地址。
+A peer with the `uds` backend is always treated as local; a peer whose `tcp` / `websocket` backend address has a host belonging to `127.0.0.0/8`, `::1` or `localhost` is likewise treated as local. The determination **MUST** be based on the connection already established at the local end and its peer address.
 
 
-## 6. 错误处理与边界
+## 6. Error handling and boundaries
 
-| 情形 | 要求 |
+| Situation | Requirement |
 |---|---|
-| 入站 `req` / `pub` / `rep` 未授权 | **必须**丢弃该信号（**不得**入队、**不得**起执行线程）；**可以**回一条 `error` 信号说明拒绝，**不得**回 `tool_result`——拒绝不是工具执行结果 |
-| 未授权拒绝所用的 `code` | 若回 `error`，`code` **应当**取实现自定义区间 `-32000` ~ `-32099`（[README §5.4](index.md#54-错误码)），并在实现文档中说明；`message` **不得**泄露本地策略细节（如完整的工具清单或授权表内容） |
-| 出站 `sub` 未授权 | 静默跳过该对端，**不得**回任何错误（发送方不应向未授权对端暴露「这里有一条你没资格看的广播」） |
-| TLS 校验失败 | 连接在传输层建立失败，握手**不得**开始，**不得**登记对端 |
-| 节点认证失败 / 身份不匹配 / 未认证连接的入站消息 | **必须**关闭连接；**不得**登记 `peer_id`、**不得**写入 `peer_manifests`、**不得**触发 `on_connected`、**不得**进入 `_dispatch` |
-| `grants` 缺失或条目缺字段 | 按 §3.2 与 §3.5 的默认值补全；**不得**因配置缺失而放行 |
-| 已知对端公钥变化 | **必须**拒绝并告警（可能的冒充）；**不得**自动接受新公钥 |
-| 中间通配符的 path 模式 | `pattern_matches` 恒返回 `False`，即**静默全拒**；实现**应当**在加载时校验并报错（fail-closed） |
+| Inbound `req` / `pub` / `rep` unauthorized | **MUST** drop the signal (**MUST NOT** enqueue it, **MUST NOT** start an execution thread); **MAY** reply with an `error` signal explaining the refusal, and **MUST NOT** reply with `tool_result` — a refusal is not a tool execution result |
+| `code` used for an unauthorized refusal | If an `error` is returned, `code` **SHOULD** come from the implementation-defined range `-32000` ~ `-32099` ([README §5.4](index.md#54-error-codes)) and be documented in the implementation's documentation; `message` **MUST NOT** leak local policy details (such as the complete tool list or the contents of the authorization table) |
+| Outbound `sub` unauthorized | Skip that peer silently and **MUST NOT** return any error (the sender should not expose to an unauthorized peer that "there is a broadcast here you are not entitled to see") |
+| TLS verification failure | The connection fails to establish at the transport layer; the handshake **MUST NOT** start and the peer **MUST NOT** be registered |
+| Node authentication failure / identity mismatch / inbound message from an unauthenticated connection | **MUST** close the connection; **MUST NOT** register `peer_id`, **MUST NOT** write into `peer_manifests`, **MUST NOT** trigger `on_connected`, **MUST NOT** enter `_dispatch` |
+| `grants` missing or an entry missing fields | Fill in the defaults of §3.2 and §3.5; **MUST NOT** allow anything because the configuration is missing |
+| Known peer's public key changed | **MUST** reject and raise an alarm (possible impersonation); **MUST NOT** accept the new public key automatically |
+| A path pattern with a middle wildcard | `pattern_matches` always returns `False`, i.e. **silent deny-all**; an implementation **SHOULD** validate at load time and report an error (fail-closed) |
 
-**边界情形**：`req: True` 是「全部工具」，包括日后新增的工具——因此**不得**用它作为临时调试的默认配置；未知 `node_id` 无对应授权条目时走 `"*"`；`"*"` 条目本身**不得**被删除后又按「无配置 = 全放行」处理。
-
-
-## 7. 规范条文汇总（MUST / SHOULD 清单）
-
-**当前位置（✅）**
-
-1. 协议层**不得**在每条消息上做默认的加密、认证或授权校验。（§1.1）
-2. 节点**应当**默认只监听 localhost；跨机暴露**必须**由部署方显式开启。（§1.2、§2.4）
-3. `node_id` 冲突的解歧**必须**有确定规则（当前为字典序定规范连接方向）。（§2.4.3）
-
-**跨机部署**：第 4–9 条（TLS / 节点认证 / 身份绑定）仍为 🔵；第 10–16 条中与**授权表**相关的部分已随 `core/grants.py` 落地（✅），与**节点认证**相关的第 16 条仍为 🔵。
-
-4. 跨机部署**必须**同时配置 TLS、节点认证、身份绑定与授权；四者缺一即视为不符合本页。（§2.4）
-5. TLS **必须**做证书链与主机名校验，**不得**在生产配置中跳过校验。（§2.4.1）
-6. 节点认证**必须**双向：`hello` 与 `ack` 都**必须**携带可验证的身份证明。（§2.4.2）
-7. 签名覆盖范围**必须**是包含 `manifest` 全文的规范化字节串；`nonce` **必须** ≥ 16 字节随机，`timestamp` 时间窗**必须**为 ±60 s，重复 `nonce` **必须**拒绝。（§2.4.2）
-8. 已确认对端的公钥发生变化时**必须**拒绝连接并告警。（§2.4.2、§5.3）
-9. `hello` / `ack` 声明的 `node_id` **必须**与证书 / 密钥身份一致；校验**必须**先于连接登记。（§2.4.3）
-10. 授权**不得**依赖对端自报的能力位，`grants` **不得**随 `Manifest` 交换。（§3.1）
-11. 授权检查**必须**位于 `_dispatch` 的第一条语句；任何路径**不得**绕过 `_dispatch` 直接处理对端消息。（§3.8）
-12. `pub` / `sub` 的模式匹配**必须**复用 `pattern_matches`，**不得**另立算法。（§3.3）
-13. `sub` 过滤**不得**改变广播报文内容，**不得**掺入带宽优化语义。（§3.6、§3.7）
-14. 本机对端**应当**整张授权表绕过；本机判定**不得**依赖对端自报字段。（§3.5）
-15. 未授权的 `req` **不得**进入工具执行路径；拒绝**不得**以 `tool_result` 形式返回。（§6）
-16. 未实现节点认证的实现**应当**忽略 `auth` 字段而不断开连接。（§5.2）
-17. 模式私有信号**必须**由注册的模式显式声明授权归属，**不得**兜底放行；扩展点的默认实现**必须**是拒绝。（§3.9）
-18. 事务归属**必须**按连接身份判定，**不得**用对端自报的 `Signal.source`；读方向与写方向的来源校验**必须**对称。（§3.10）
+**Boundary cases**: `req: True` means "all tools", including tools added later — so it **MUST NOT** be used as a default configuration for temporary debugging; an unknown `node_id` with no corresponding authorization entry goes to `"*"`; the `"*"` entry itself **MUST NOT** be deleted and then handled as "no configuration = allow everything".
 
 
-## 8. 安全考量
+## 7. Summary of normative provisions (MUST / SHOULD list)
 
-- **`node_id` 冒充的连锁反应**：冒充 → 发现注册表污染（声明文件以 `node_id` 命名）→ 去重紊乱（规范连接方向由 `node_id` 序决定）→ 流量被引向攻击者。身份绑定（§2.4.3）是唯一在协议层可判定的收口点。
-- **广播的信息泄露面**：`publish` 默认扇出到所有已连对端，任何一条广播都可能被第三方节点旁观。跨机部署下**应当**按敏感度拆分域前缀（如把敏感通知放在独立域），因为 `sub` 过滤只在**发送方**生效——发送方必须事先知道谁能看。
-- **工具执行 = 任意代码执行入口**：注册一个工具等于对外暴露一个可被调用的函数，其内部可触达文件系统、网络与进程。授权表（`req` 白名单）是**唯一**闸门；因此 `req` 的默认值**必须**是空列表。
-- **UDS 的 `0o600`**：`UDSTransport.listen` 把 socket 文件权限收紧到仅本用户可连，与「本机同用户全量信任」一致（✅）。清理残留时只删除 `stat.S_ISSOCK` 类型的文件（`_unlink_stale`），防误删普通文件——实现**不得**改成无条件 `unlink`。
-- **资源路径与 URI 越权（roots）**：`resources` / `roots` 面（🔵，见 [capabilities.md](./capabilities.md)）一旦实现，URI **必须**在服务端做根目录约束（前缀规范化 + `..` 拒绝），**不得**把授权完全交给调用方声明。
-- **大对象 `blob_ref` 的完整性**：`blob_ref.checksum` 是对内容的校验和，接收方**应当**在拼接完成后校验；缺失或不匹配时**应当**拒绝使用该对象，而不是降级为「信任长度字段」。`size` 与 `checksum` 均为**提示性**字段，**不得**作为内存预分配的唯一下界（[transports.md](./transports.md) 的 16 MiB 消息上限才是硬边界）。
-- **~~握手无读超时（DoS 面）~~ ✅ 已修复**：`handshake_outbound` / `handshake_inbound` 的 `receive()` 现受 `handshake_timeout`（默认 10 s）约束，对端 accept 了 TCP 却永不回 `ACK` 时会超时关闭连接，不再永久占用连接线程（见 §9）。节点认证的握手前置校验**应当**沿用同一超时。
-- **`rep` 的伪造面**：放行 `rep` 意味着对端**可以**发送任意 `tool_result`；本地只按 `reqid` 匹配，未在 `pending_calls` 中的结果被忽略。因此 `reqid` **应当**保持不可预测（`Signal.new_reqid()` 为 16 位十六进制）；**不应当**使用自增序号式的 `reqid`，否则已授权的对端可以按序猜中并注入伪造结果（参考实现中 `msp/multi-round` 的 `mr-<n>` 即属此列，见 §9）。
-- **虚假安全的反向风险**：给出一个默认全放行、又宣称「支持授权」的实现，比明确声明「不做授权」更危险。实现若未落实本节条文，**应当**在文档中明确声明，而不是留一个可被误解的配置项。
+**Current position (✅)**
+
+1. The protocol layer **MUST NOT** perform default encryption, authentication or authorization checks on every message. (§1.1)
+2. A node **SHOULD** listen on localhost only by default; cross-machine exposure **MUST** be explicitly enabled by the deployer. (§1.2, §2.4)
+3. Resolution of a `node_id` conflict **MUST** follow a deterministic rule (currently lexicographic order deciding the canonical connection direction). (§2.4.3)
+
+**Cross-machine deployment**: items 4–9 (TLS / node authentication / identity binding) remain 🔵; among items 10–16, the parts relating to the **authorization table** have landed with `core/grants.py` (✅), while item 16, relating to **node authentication**, remains 🔵.
+
+4. A cross-machine deployment **MUST** configure TLS, node authentication, identity binding and authorization together; missing any one of the four means non-conformance with this page. (§2.4)
+5. TLS **MUST** verify the certificate chain and the host name, and **MUST NOT** skip verification in a production configuration. (§2.4.1)
+6. Node authentication **MUST** be mutual: both `hello` and `ack` **MUST** carry verifiable proof of identity. (§2.4.2)
+7. The signature coverage **MUST** be a canonical byte string containing the whole `manifest`; `nonce` **MUST** be ≥ 16 random bytes, the `timestamp` window **MUST** be ±60 s, and a repeated `nonce` **MUST** be rejected. (§2.4.2)
+8. When the public key of a confirmed peer changes, the connection **MUST** be rejected and an alarm raised. (§2.4.2, §5.3)
+9. The `node_id` declared in `hello` / `ack` **MUST** match the certificate / key identity; verification **MUST** precede connection registration. (§2.4.3)
+10. Authorization **MUST NOT** depend on the capability bits a peer reports, and `grants` **MUST NOT** be exchanged with the `Manifest`. (§3.1)
+11. The authorization check **MUST** be the first statement of `_dispatch`; any path **MUST NOT** bypass `_dispatch` to handle peer messages directly. (§3.8)
+12. Pattern matching for `pub` / `sub` **MUST** reuse `pattern_matches`, and **MUST NOT** establish a separate algorithm. (§3.3)
+13. `sub` filtering **MUST NOT** change the content of the broadcast message, and **MUST NOT** mix in bandwidth-optimisation semantics. (§3.6, §3.7)
+14. Local peers **SHOULD** bypass the whole authorization table; the local determination **MUST NOT** depend on fields a peer reports about itself. (§3.5)
+15. An unauthorized `req` **MUST NOT** enter the tool execution path; a refusal **MUST NOT** be returned in the form of a `tool_result`. (§6)
+16. An implementation that does not implement node authentication **SHOULD** ignore the `auth` field rather than disconnect. (§5.2)
+17. A pattern-private signal **MUST** have its authorization ownership explicitly declared by the registered pattern, and **MUST NOT** be let through as a fallback; the default implementation of the extension point **MUST** be to deny. (§3.9)
+18. Transaction ownership **MUST** be decided by the connection identity, and **MUST NOT** use the peer-reported `Signal.source`; source verification on the read and write directions **MUST** be symmetric. (§3.10)
 
 
-## 9. 已知缺口
+## 8. Security considerations
 
-1. ~~**授权检查尚未实现**~~：✅ 已实现——`core/grants.py` 解析授权表，`MSPProtocol.authorized()` 是 `_dispatch` 的第一条语句，`grant_sub()` 在扇出时过滤，`_reject()` 丢弃未授权信号（带 `reqid` 时回 `error`，`code = -32000`）。两点仍然成立：它**不覆盖模式私有信号**（见第 6 条），且授权表的落点是节点配置而非 `Preset`——§3.2 已按实现把「落点」放宽为规范性无关项。
-2. **TLS / 节点认证 / 身份绑定尚未实现**：协议层无相关代码；`WebSocketTransport` 只接受 `ws://`，无 TLS 支持。
-3. **跨机监听没有配置入口**：`TransportRegistry.listen_all()` 以 `transport.listen({})` 调用后端，而 `TCPTransport.listen` / `WebSocketTransport.listen` 的 host 默认 `127.0.0.1`；节点级 `config` 只支持 `connect_backoff` / `discovery` / `presence`，**当前无法只靠配置监听 `0.0.0.0`**——需要改传输层或注册表。
-4. ~~**握手无读超时**~~：✅ 已修复——`handshake_timeout`（默认 10 s）配合 `Connection.set_read_timeout()`，超时即关闭连接并计为不可达。
-5. **`pub` / `sub` 无「单模式全量放行」写法**：`pattern_matches` 要求通配符带前缀，裸 `*` / `**` 匹配不到任何 path；全量放行只能逐一列举域前缀。
-6. ~~**模式私有信号不在授权表管辖内**~~：✅ **已定义并实现**。协议层对「非核心类型」不再兜底放行，而是交给**注册的模式**自己声明归属（`PatternHandler.authorize`，**默认拒绝**），映射表见 §3.9。`task_submit` 走 `req`（`payload.task` 视同工具名做精确匹配）、`task_query` / `task_cancel` 要求该对端有任意 `req` 权利、其余 `task_*` 与 `input_*` 走 `rep`。**新增信号类型必须显式归类，未归类即拒绝。**
-7. **`msp/multi-round` 的 `reqid` 可预测**：`_next_reqid()` 返回 `mr-<自增计数>`，配合 `rep` 放行会留下伪造 `tool_result` 的注入面。
-8. **`error` 信号的 `code` 用法不统一**：参考实现目前只在两种情形发码——「未知信号类型」用 `-32600`，**授权拒绝**用 `-32000`（且仅当信号带 `reqid`；广播类没有可回的错误对象，静默丢弃）。[README §5.4](index.md#54-错误码) 中的 `-32601` / `-32602` / `-32603` 在协议核心中**从未**被发出（仅存在于 `msp/mcp/jsonrpc.py` 的 JSON-RPC 桥），工具失败一律作为字符串放进 `tool_result.payload.error`。
-9. **UDS 仅 Linux / macOS**：Windows 的 Python 未暴露 `socket.AF_UNIX`，`listen()` / `connect()` 抛 `RuntimeError`；Windows 上 `0o600` 与 socket 文件语义均不可用。
+- **The knock-on effects of `node_id` impersonation**: impersonation → discovery registry poisoning (declaration files are named by `node_id`) → deduplication disorder (the canonical connection direction is decided by `node_id` order) → traffic is steered to the attacker. Identity binding (§2.4.3) is the only closure point decidable at the protocol layer.
+- **The information-exposure surface of broadcast**: `publish` fans out to every connected peer by default, so any broadcast may be observed by a third-party node. In a cross-machine deployment the domain prefixes **SHOULD** be split by sensitivity (for example, putting sensitive notifications in a separate domain), because `sub` filtering takes effect only **on the sender** — the sender has to know in advance who may see it.
+- **Tool execution = an arbitrary-code-execution entry point**: registering a tool is exposing a callable function to the outside, and its internals can reach the file system, the network and processes. The authorization table (the `req` whitelist) is the **only** gate; the default value of `req` **MUST** therefore be an empty list.
+- **`0o600` on UDS**: `UDSTransport.listen` tightens the socket file permission so that only the current user can connect, consistent with "same-user local full trust" (✅). When cleaning up leftovers it deletes only files of type `stat.S_ISSOCK` (`_unlink_stale`), preventing ordinary files from being deleted by mistake — an implementation **MUST NOT** change this to an unconditional `unlink`.
+- **Resource paths and URI over-reach (roots)**: once the `resources` / `roots` surface is implemented (🔵, see [capabilities.md](./capabilities.md)), URIs **MUST** be constrained to the root directory on the server side (prefix canonicalisation + rejection of `..`), and **MUST NOT** leave authorization entirely to what the caller declares.
+- **Integrity of the large-object `blob_ref`**: `blob_ref.checksum` is a checksum over the content, and the receiver **SHOULD** verify it after reassembly; when it is missing or does not match, it **SHOULD** refuse to use the object rather than degrade to "trust the length field". Both `size` and `checksum` are **advisory** fields and **MUST NOT** be used as the sole lower bound for memory pre-allocation (the 16 MiB message limit in [transports.md](./transports.md) is the hard boundary).
+- **~~No read timeout during the handshake (DoS surface)~~ ✅ fixed**: `receive()` in `handshake_outbound` / `handshake_inbound` is now bounded by `handshake_timeout` (10 s by default), so a peer that accepts TCP but never sends `ACK` is timed out and the connection closed, instead of occupying a connection thread forever (see §9). The pre-handshake verification of node authentication **SHOULD** reuse the same timeout.
+- **The forgery surface of `rep`**: allowing `rep` means the peer **MAY** send arbitrary `tool_result` messages; locally they are matched only by `reqid`, and results not in `pending_calls` are ignored. `reqid` **SHOULD** therefore stay unpredictable (`Signal.new_reqid()` yields 16 hex digits); an incrementing-sequence `reqid` **SHOULD NOT** be used, otherwise an authorized peer can guess in order and inject forged results (the `mr-<n>` of `msp/multi-round` in the reference implementation is a case in point, see §9).
+- **The reverse risk of false security**: an implementation that allows everything by default and also claims to "support authorization" is more dangerous than one that states plainly "no authorization". If an implementation has not implemented the provisions of this section, it **SHOULD** say so explicitly in its documentation, rather than leave a configuration option that can be misread.
 
 
-## 10. 参考实现映射
+## 9. Known gaps
 
-| 条文 | 状态 | 源码文件与符号 |
+1. ~~**The authorization check is not yet implemented**~~: ✅ implemented — `core/grants.py` parses the authorization table, `MSPProtocol.authorized()` is the first statement of `_dispatch`, `grant_sub()` filters during fan-out, and `_reject()` drops unauthorized signals (replying with `error`, `code = -32000`, when a `reqid` is present). Two points still hold: it **does not cover pattern-private signals** (see item 6), and the authorization table's landing point is the node configuration rather than a `Preset` — §3.2 has relaxed "landing point" into something normatively irrelevant, in line with the implementation.
+2. **TLS / node authentication / identity binding are not yet implemented**: the protocol layer has no related code; `WebSocketTransport` accepts `ws://` only and has no TLS support.
+3. **There is no configuration entry for cross-machine listening**: `TransportRegistry.listen_all()` calls the backend as `transport.listen({})`, while the host defaults to `127.0.0.1` in `TCPTransport.listen` / `WebSocketTransport.listen`; the node-level `config` supports only `connect_backoff` / `discovery` / `presence`, so **it is currently impossible to listen on `0.0.0.0` through configuration alone** — the transport layer or the registry needs to change.
+4. ~~**No read timeout during the handshake**~~: ✅ fixed — `handshake_timeout` (10 s by default) together with `Connection.set_read_timeout()`; on timeout the connection is closed and counted as unreachable.
+5. **`pub` / `sub` have no "single pattern allows everything" spelling**: `pattern_matches` requires a wildcard to carry a prefix, so bare `*` / `**` match no path; allowing everything can only be done by listing the domain prefixes one by one.
+6. ~~**Pattern-private signals are outside the authorization table's jurisdiction**~~: ✅ **defined and implemented**. The protocol layer no longer lets "non-core types" through as a fallback; it hands them to the **registered pattern** to declare ownership (`PatternHandler.authorize`, **deny by default**), with the mapping table in §3.9. `task_submit` goes through `req` (`payload.task` is treated like a tool name for exact matching), `task_query` / `task_cancel` require that peer to hold any `req` right, and the remaining `task_*` and `input_*` go through `rep`. **A new signal type MUST be classified explicitly; unclassified means rejected.**
+7. **The `reqid` of `msp/multi-round` is predictable**: `_next_reqid()` returns `mr-<an auto-increment counter>`, which together with `rep` allowed leaves an injection surface for forged `tool_result`.
+8. **The `code` usage of the `error` signal is not uniform**: the reference implementation currently emits a code in only two cases — `-32600` for "unknown signal type", and `-32000` for an **authorization refusal** (and only when the signal carries a `reqid`; broadcast signals have no error object to reply to and are dropped silently). The `-32601` / `-32602` / `-32603` in [README §5.4](index.md#54-error-codes) are **never** emitted by the protocol core (they exist only in the JSON-RPC bridge in `msp/mcp/jsonrpc.py`), and tool failures always go into `tool_result.payload.error` as a string.
+9. **UDS is Linux / macOS only**: Python on Windows does not expose `socket.AF_UNIX`, and `listen()` / `connect()` raise `RuntimeError`; on Windows neither `0o600` nor the socket file semantics are available.
+
+
+## 10. Reference implementation map
+
+| Provision | Status | Source files and symbols |
 |---|---|---|
-| 信任边界 = 传输可达（无授权分支） | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._dispatch`、`_dispatch_core` |
-| 连接登记与 `node_id` 去重 | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._finish_handshake` |
-| 握手报文（`payload.manifest`） | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `handshake_outbound` / `handshake_inbound` |
-| 握手读超时 | ✅ 已修复 | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `handshake_outbound` / `_receive_handshake`；[src/msp/transport/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) `Connection.set_read_timeout` |
-| 默认只监听 localhost | ✅ | [src/msp/transport/tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) `TCPTransport.listen`；[src/msp/transport/websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `WebSocketTransport.listen` |
-| 监听地址无配置入口 | ✅（缺口） | [src/msp/transport/registry.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/registry.py) `TransportRegistry.listen_all` |
-| UDS `0o600` 与 socket 误删防护 | ✅ | [src/msp/transport/uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `UDSTransport.listen`、`UDSTransport._unlink_stale` |
-| 路径模式匹配（`pub` / `sub` 复用） | ✅ | [src/msp/protocol/matcher.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/matcher.py) `pattern_matches` |
-| 广播扇出（`sub` 过滤的插入点） | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol.publish` |
-| 本地回调匹配（`pub` 过滤的插入点） | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._on_signal` |
-| `reqid` 生成 | ✅ | [src/msp/core/signal.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/signal.py) `Signal.new_reqid`；[src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `MultiRoundHandler._next_reqid` |
-| 授权表 `grants` | ✅ | [src/msp/core/grants.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/grants.py) `grants_from_json` / `grants_for` / `is_local_host`；[src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol.authorized` / `grant_sub` / `_reject`；[src/msp/core/node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `config["grants"]` → `MSPProtocol(grants=...)`；[src/msp/core/exposure.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/exposure.py) `exposure_warning` |
-| TLS / 节点认证 / 身份绑定 | 🔵 | 无（规划中；拟落于传输包装与握手前置校验） |
-| 模式私有信号的授权归属 | ✅ | [src/msp/patterns/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/base.py) `PatternHandler.authorize`（默认拒绝）；[src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol.authorized` 的 `_AUTHORIZATION_FREE_TYPES` 与模式委派；[src/msp/patterns/task.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) / [src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) 的 `authorize` |
-| 写方向的来源校验 | ✅ | [src/msp/patterns/task.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) `TaskHandler._write_from_executor`（`_on_status` / `_on_artifact` / `_on_result` / `_on_input_required`）；[src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `_on_tool_result` / `_on_input_required` / `_on_input_response` |
-| 对端清单归一（外来输入） | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `_sanitize_peer_manifest`（握手与 `manifest_update` 两处入口）；[src/msp/core/grants.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/grants.py) `normalize_grants` |
+| Trust boundary = transport reach (no authorization branch) | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._dispatch`, `_dispatch_core` |
+| Connection registration and `node_id` deduplication | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._finish_handshake` |
+| Handshake messages (`payload.manifest`) | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `handshake_outbound` / `handshake_inbound` |
+| Handshake read timeout | ✅ fixed | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `handshake_outbound` / `_receive_handshake`; [src/msp/transport/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/base.py) `Connection.set_read_timeout` |
+| localhost-only listening by default | ✅ | [src/msp/transport/tcp.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/tcp.py) `TCPTransport.listen`; [src/msp/transport/websocket.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/websocket.py) `WebSocketTransport.listen` |
+| No configuration entry for the listen address | ✅ (gap) | [src/msp/transport/registry.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/registry.py) `TransportRegistry.listen_all` |
+| UDS `0o600` and socket misdeletion protection | ✅ | [src/msp/transport/uds.py](https://github.com/hxh230802/MSP/blob/master/src/msp/transport/uds.py) `UDSTransport.listen`, `UDSTransport._unlink_stale` |
+| Path pattern matching (`pub` / `sub` reuse) | ✅ | [src/msp/protocol/matcher.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/matcher.py) `pattern_matches` |
+| Broadcast fan-out (insertion point for `sub` filtering) | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol.publish` |
+| Local callback matching (insertion point for `pub` filtering) | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._on_signal` |
+| `reqid` generation | ✅ | [src/msp/core/signal.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/signal.py) `Signal.new_reqid`; [src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `MultiRoundHandler._next_reqid` |
+| Authorization table `grants` | ✅ | [src/msp/core/grants.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/grants.py) `grants_from_json` / `grants_for` / `is_local_host`; [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol.authorized` / `grant_sub` / `_reject`; [src/msp/core/node.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `config["grants"]` → `MSPProtocol(grants=...)`; [src/msp/core/exposure.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/exposure.py) `exposure_warning` |
+| TLS / node authentication / identity binding | 🔵 | None (planned; intended to land in the transport wrapper and pre-handshake verification) |
+| Authorization ownership of pattern-private signals | ✅ | [src/msp/patterns/base.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/base.py) `PatternHandler.authorize` (deny by default); `_AUTHORIZATION_FREE_TYPES` and the pattern delegation in `MSPProtocol.authorized` in [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py); the `authorize` of [src/msp/patterns/task.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) / [src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) |
+| Source verification on the write direction | ✅ | [src/msp/patterns/task.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) `TaskHandler._write_from_executor` (`_on_status` / `_on_artifact` / `_on_result` / `_on_input_required`); [src/msp/patterns/multi_round.py](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `_on_tool_result` / `_on_input_required` / `_on_input_response` |
+| Peer manifest normalisation (foreign input) | ✅ | [src/msp/protocol/protocol.py](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `_sanitize_peer_manifest` (both entry points: the handshake and `manifest_update`); [src/msp/core/grants.py](https://github.com/hxh230802/MSP/blob/master/src/msp/core/grants.py) `normalize_grants` |
 
-**相关页面**：[规范索引](index.md) · [base-protocol](./base-protocol.md#4-连接生命周期) · [transports](./transports.md) · [discovery](./discovery.md) · [patterns/publish-subscribe](./patterns/publish-subscribe.md) · [capabilities](./capabilities.md) · [设计文档 §安全模型](/design) · [技术白皮书 §6](https://github.com/hxh230802/MSP/blob/master/docs/whitepaper.md)
+**See also**: [Specification index](index.md) · [base-protocol](./base-protocol.md#4-connection-lifecycle) · [transports](./transports.md) · [discovery](./discovery.md) · [patterns/publish-subscribe](./patterns/publish-subscribe.md) · [capabilities](./capabilities.md) · [Design document §Security model](/design) · [Technical whitepaper §6](https://github.com/hxh230802/MSP/blob/master/docs/whitepaper.md)

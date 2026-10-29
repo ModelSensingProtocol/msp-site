@@ -1,45 +1,45 @@
-# 核心模式：发布—订阅（`msp/publish-subscribe`）
+# Core Pattern: Publish–Subscribe (`msp/publish-subscribe`)
 
 | | |
 |---|---|
-| **协议修订** | `2026-10-10` |
-| **状态** | ✅ 已实现（含发送侧 `sub` 授权过滤） |
-| **本页定义** | 核心通讯模式 `msp/publish-subscribe`：广播模型（`publish` 扇出到所有已连对端、**无订阅表**）、接收方本地过滤（`on(path)`）、路径语法与通配符匹配算法（`pattern_matches` 逐行对应）、匹配边界与易错点、虚拟总线与版本化路径、安全考量 |
+| **Protocol revision** | `2026-10-10` |
+| **Status** | ✅ implemented (including sender-side `sub` authorization filtering) |
+| **Defined on this page** | The core communication pattern `msp/publish-subscribe`: the broadcast model (`publish` fans out to every connected peer, **no subscription table**), receiver-side local filtering (`on(path)`), path syntax and the wildcard matching algorithm (`pattern_matches`, line by line), matching boundaries and pitfalls, the virtual bus and versioned paths, and security considerations |
 
-> 本页是 [patterns.md](../patterns.md) 的具体化。`msp/publish-subscribe` 是**核心模式**，直接实现在协议层，不进 `PATTERN_REGISTRY`，也没有 Handler 实例（理由见 [patterns.md §4.2](../patterns.md#42-为什么这两个是核心)）。
+> This page concretises [patterns.md](../patterns.md). `msp/publish-subscribe` is a **core pattern**: it is implemented directly in the protocol layer, does not enter `PATTERN_REGISTRY`, and has no Handler instance (the rationale is in [patterns.md §4.2](../patterns.md#42-why-these-two-are-core)).
 
 ---
 
-## 1. 概述
+## 1. Overview
 
-`msp/publish-subscribe` 的语义一句话：**发布方把一条 `type="signal"` 的报文扇出到所有已连对端；接收方在本地用路径模式过滤，命中的回调才触发。**
+The semantics of `msp/publish-subscribe` in one sentence: **the publisher fans one `type="signal"` message out to every connected peer; the receiver filters locally with a path pattern, and only the callbacks that match are triggered.**
 
-它的关键设计取舍是**没有订阅表**：
+Its key design trade-off is that there is **no subscription table**:
 
-- **线上没有 subscribe / unsubscribe 信号**。发布方不知道谁「订阅」了什么，也不需要知道。
-- **发布不需要协商**。`publish()` 直接把信号发给全部已连对端，包括从未表达过兴趣的对端。
-- **过滤责任在接收方**。是否消费由接收方的 `on()` 模式决定。
+- **There is no subscribe / unsubscribe signal on the wire.** The publisher does not know who "subscribed" to what, and does not need to.
+- **Publishing needs no negotiation.** `publish()` sends the signal straight to every connected peer, including peers that have never expressed interest.
+- **The filtering responsibility lies with the receiver.** Whether to consume is decided by the receiver's `on()` pattern.
 
-这条取舍换来的是协议面的极小化：一个只实现 `msp/publish-subscribe` 的节点不需要维护任何对端订阅状态，也不需要处理订阅与断线的时序竞态（对端掉线后订阅是否还在？——不存在这个问题，因为没有订阅）。
+What this trade-off buys is a minimal protocol surface: a node that implements only `msp/publish-subscribe` needs to maintain no per-peer subscription state, and needs to handle no ordering race between subscriptions and disconnection (is a subscription still there after the peer drops? — the question does not arise, because there are no subscriptions).
 
-代价是**带宽**：`N` 个已连对端就是 `N` 次发送，与「有多少人真的感兴趣」无关。这是**刻意的取舍，不是缺陷**（见 [architecture.md §已知缺口](../architecture.md#13-已知缺口)）。
+The cost is **bandwidth**: `N` connected peers means `N` sends, irrespective of "how many are actually interested". This is a **deliberate trade-off, not a defect** (see [architecture.md §Known gaps](../architecture.md#13-known-gaps)).
 
-### 1.1 在分层中的位置
+### 1.1 Position in the layering
 
-| 能力 | 公开 API | 协议层实现 |
+| Capability | Public API | Protocol-layer implementation |
 |---|---|---|
-| 发布 | `node.publish(path, payload)` | `MSPProtocol.publish` |
-| 订阅（本地过滤） | `node.on(path)` | `MSPProtocol.on`、`MSPProtocol._on_signal` |
-| 路径匹配 | — | `protocol/matcher.py` → `pattern_matches` |
-| 自动重复发布 | `@node.signal_source(path)` / `@node.signal(path)` | `MSPNode._run_signal_source` |
+| Publish | `node.publish(path, payload)` | `MSPProtocol.publish` |
+| Subscribe (local filtering) | `node.on(path)` | `MSPProtocol.on`, `MSPProtocol._on_signal` |
+| Path matching | — | `protocol/matcher.py` → `pattern_matches` |
+| Automatic repeated publishing | `@node.signal_source(path)` / `@node.signal(path)` | `MSPNode._run_signal_source` |
 
 ---
 
-## 2. 契约
+## 2. Contract
 
-### 2.1 报文形态
+### 2.1 Message shape
 
-`publish(path, payload)` 构造**恰好**如下信号：
+`publish(path, payload)` constructs **exactly** the following signal:
 
 ```python
 Signal.make(
@@ -50,93 +50,93 @@ Signal.make(
 )
 ```
 
-**必须**满足：
+**MUST** satisfy:
 
-| 字段 | 值 | 级别 |
+| Field | Value | Level |
 |---|---|---|
-| `type` | 恒为 `"signal"` | **必须** |
-| `source` | 恒为本节点 `node_id` | **必须** |
-| `path` | 调用方给出的路径，**必须**符合 `segment(.segment)*`（`[README.md §5.3](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#53-命名规范)`） | **必须** |
-| `payload` | 调用方给出的字典 | **必须** |
-| `target` | `None`（广播无单一目标） | **必须**为 `None` |
-| `pattern` | `None`（核心模式不写路由键） | **必须**为 `None` |
-| `reqid` | `None`（广播不需要应答关联） | **必须**为 `None` |
-| `timestamp` | 由 `Signal.make` 自动填充 | **必须** |
+| `type` | always `"signal"` | **MUST** |
+| `source` | always this node's `node_id` | **MUST** |
+| `path` | the path supplied by the caller, which **MUST** conform to `segment(.segment)*` (`[README.md §5.3](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#53-命名规范)`) | **MUST** |
+| `payload` | the dictionary supplied by the caller | **MUST** |
+| `target` | `None` (a broadcast has no single target) | **MUST** be `None` |
+| `pattern` | `None` (core patterns write no routing key) | **MUST** be `None` |
+| `reqid` | `None` (a broadcast needs no reply correlation) | **MUST** be `None` |
+| `timestamp` | filled in automatically by `Signal.make` | **MUST** |
 
-**注意**：`payload` 内部**没有** `path` 字段——路径是**信封字段** `Signal.path`，不是载荷字段。实现**不得**把路径塞进 `payload`。
+**Note**: there is **no** `path` field inside `payload` — the path is the **envelope field** `Signal.path`, not a payload field. Implementations **MUST NOT** stuff the path into `payload`.
 
-### 2.2 扇出语义
+### 2.2 Fan-out semantics
 
-`publish()` **必须**：
+`publish()` **MUST**:
 
-1. 在锁内快照连接表（`list(self.connections.items())`），**不得**持锁执行网络发送；
-2. 对**每一个**已连对端发送同一份报文的编码结果；
-3. 对发送时抛 `ConnectionClosed` 的对端，**必须**触发该对端的断连清理（`_handle_disconnect(peer_id, conn)`），并继续发送给其余对端；
-4. **不得**因为某个对端失败而中断整个扇出循环；
-5. **不得**返回任何成功/失败计数——`publish()` 的返回值是 `None`。广播是「尽力而为」（best-effort），不是「全部送达」。
+1. snapshot the connection table under the lock (`list(self.connections.items())`) and **MUST NOT** perform network sends while holding the lock;
+2. send the encoding of the same message to **every** connected peer;
+3. for a peer that raises `ConnectionClosed` on send, **MUST** trigger that peer's disconnection cleanup (`_handle_disconnect(peer_id, conn)`) and keep sending to the remaining peers;
+4. **MUST NOT** break out of the fan-out loop because one peer failed;
+5. **MUST NOT** return any success/failure count — the return value of `publish()` is `None`. A broadcast is "best-effort", not "delivered to all".
 
-> 「尽力而为」的准确含义：若调用 `publish()` 时某对端的连接**已经**关闭，那它收不到；若连接在发送过程中关闭，扇出循环会感知并清理；若对端进程已经死了但 TCP 还没察觉，报文会被写入内核缓冲区然后随连接超时一起消失。**没有**送达确认，也**不应有**——需要确认就用 `msp/request-reply`。
+> The precise meaning of "best-effort": if a peer's connection is **already** closed when `publish()` is called, that peer does not receive the signal; if the connection closes during the send, the fan-out loop notices and cleans up; if the peer process is dead but TCP has not yet noticed, the message is written into the kernel buffer and then vanishes with the connection timeout. There is **no** delivery confirmation, and there **SHOULD NOT** be — if you need confirmation, use `msp/request-reply`.
 
-### 2.3 接收方本地过滤
+### 2.3 Receiver-side local filtering
 
-接收方**必须**按以下规则处理收到的 `signal`：
+The receiver **MUST** process a received `signal` by the following rules:
 
-1. `_dispatch` 第 1 步不命中（`signal` 不是核心信号类型）；
-2. `_dispatch` 第 2 步不命中（`pattern` 为 `None`）；
-3. `_dispatch_core` 命中 `SignalType.SIGNAL` → `_on_signal(peer_id, msg)`；
-4. `_on_signal` 在锁内快照回调列表，然后在锁外遍历；
-5. 对每个 `(path_filter, func)`：
-   - 若 `path_filter is None` → **无条件**调用；
-   - 否则若 `pattern_matches(path_filter, msg.path)` 为真 → 调用；
-   - 否则跳过。
+1. step 1 of `_dispatch` does not match (`signal` is not a core signal type);
+2. step 2 of `_dispatch` does not match (`pattern` is `None`);
+3. `_dispatch_core` matches `SignalType.SIGNAL` → `_on_signal(peer_id, msg)`;
+4. `_on_signal` snapshots the callback list under the lock, then iterates outside the lock;
+5. for each `(path_filter, func)`:
+   - if `path_filter is None` → call **unconditionally**;
+   - otherwise, if `pattern_matches(path_filter, msg.path)` is true → call;
+   - otherwise skip.
 
-**必须**满足：
+**MUST** satisfy:
 
-| # | 条文 | 级别 |
+| # | Provision | Level |
 |---|---|---|
-| 1 | `path=None` 的回调**必须**匹配**全部**路径 | **必须** |
-| 2 | 每个命中回调**必须**被调用一次；多个回调命中时**必须**全部调用 | **必须** |
-| 3 | 单个回调抛出的任何异常**必须**被捕获（记 warning 日志），**不得**影响后续回调 | **必须** |
-| 4 | 回调**必须**在协议层读循环线程上被调用（**不是**工作线程） | **必须** |
-| 5 | 回调**不得**执行长耗时操作——它会阻塞该连接的消息接收（同 [patterns.md §3.5](../patterns.md#35-on_signal-的运行线程与阻塞禁令)） | **不得** |
-| 6 | 回调注册**必须**可以随时进行，包括在读循环运行期间（注册表在锁内修改） | **必须** |
-| 7 | 回调**不得**从回调内部注销自身——当前**没有**注销 API（见 §10 G1） | **不得** |
+| 1 | a callback with `path=None` **MUST** match **all** paths | **MUST** |
+| 2 | each matching callback **MUST** be called exactly once; when several callbacks match, all of them **MUST** be called | **MUST** |
+| 3 | any exception raised by a single callback **MUST** be caught (logged as a warning) and **MUST NOT** affect subsequent callbacks | **MUST** |
+| 4 | callbacks **MUST** be invoked on the protocol-layer read-loop thread (**not** a worker thread) | **MUST** |
+| 5 | a callback **MUST NOT** perform long-running work — it blocks message reception on that connection (same as [patterns.md §3.5](../patterns.md#35-the-thread-on_signal-runs-on-and-the-blocking-prohibition)) | **MUST NOT** |
+| 6 | callback registration **MUST** be possible at any time, including while the read loop is running (the registry is modified under the lock) | **MUST** |
+| 7 | a callback **MUST NOT** deregister itself from inside the callback — there is currently **no** deregistration API (see §10 G1) | **MUST NOT** |
 
-回调签名是 `func(sig)`，其中 `sig` 是完整的 `Signal` 对象（可取 `sig.source` / `sig.path` / `sig.payload` / `sig.timestamp`）。
+The callback signature is `func(sig)`, where `sig` is the complete `Signal` object (`sig.source` / `sig.path` / `sig.payload` / `sig.timestamp` are available).
 
-### 2.4 注册 API
+### 2.4 Registration API
 
-协议层 `on(path=None, callback=None)` 支持两种用法：
+The protocol layer's `on(path=None, callback=None)` supports two forms:
 
 ```python
-# 用法一：装饰器
+# Form one: decorator
 @proto.on(path="ai.state")
 def handler(sig): ...
 
-# 用法二：直接注册
+# Form two: direct registration
 proto.on(path="ai.state", callback=handler)
 ```
 
-节点层 `node.on(path=None)` 只暴露装饰器形态：
+The node layer's `node.on(path=None)` exposes only the decorator form:
 
 ```python
 @node.on("ai.state")
 def handler(sig): ...
 
-@node.on()          # path=None：接收全部
+@node.on()          # path=None: receive everything
 def spy(sig): ...
 ```
 
-**必须**满足：
+**MUST** satisfy:
 
-1. 同一回调**可以**被注册多次，它就会被调用多次——实现**不得**去重；
-2. 注册**必须**返回被装饰的函数本身（装饰器形态），使函数仍可正常调用；
-3. `path` 参数**必须**允许为 `None`；
-4. **不得**为 `path` 参数做格式校验——非法的路径模式不是错误，只是永不匹配（见 §4.5）。
+1. the same callback **MAY** be registered several times and will then be called several times — implementations **MUST NOT** deduplicate;
+2. registration **MUST** return the decorated function itself (decorator form), so that the function remains callable;
+3. the `path` parameter **MUST** allow `None`;
+4. implementations **MUST NOT** validate the format of the `path` parameter — an invalid path pattern is not an error, it simply never matches (see §4.5).
 
-### 2.5 自动重复发布
+### 2.5 Automatic repeated publishing
 
-`@node.signal_source(path)`（别名 `@node.signal(path)`）装饰一个**生成器**函数。节点启动后，每个信号源在**独立线程**里持续迭代：
+`@node.signal_source(path)` (alias `@node.signal(path)`) decorates a **generator** function. After the node starts, each signal source iterates continuously on its **own thread**:
 
 ```
 for payload in func():
@@ -145,289 +145,289 @@ for payload in func():
     publish(path, payload)
 ```
 
-**必须**满足：
+**MUST** satisfy:
 
-1. 生成器的每次 `yield` **必须**是一个 `dict`；非 `dict` 的产出**必须**被跳过（不报错、不发布）；
-2. 第一个产出到达前允许有任意延迟（常用于等订阅者就绪）；
-3. 生成器函数内抛出的异常**必须**被捕获、记日志为「信号源异常终止」，**不得**影响其它信号源或节点；
-4. `signal_source` **必须**同时声明路径（等价于调用一次 `declare_signal(path)`），使该路径出现在 `Manifest.signals` 中；
-5. 节点停止后**不得**继续发布——`_running` 为假时循环中断。
+1. every `yield` of the generator **MUST** be a `dict`; anything that is not a `dict` **MUST** be skipped (no error, no publish);
+2. an arbitrary delay before the first yield is allowed (commonly used to wait for subscribers);
+3. exceptions raised inside the generator function **MUST** be caught and logged as "signal source terminated abnormally", and **MUST NOT** affect other signal sources or the node;
+4. `signal_source` **MUST** also declare the path (equivalent to calling `declare_signal(path)` once), so that the path appears in `Manifest.signals`;
+5. after the node has stopped it **MUST NOT** keep publishing — the loop breaks while `_running` is false.
 
 ---
 
-## 3. 路径语法
+## 3. Path syntax
 
-路径是信号的**逻辑地址**，与传输地址、`node_id` 无关。
+A path is a signal's **logical address**; it is independent of transport addresses and of `node_id`.
 
-### 3.1 字符与分层
+### 3.1 Characters and layering
 
-| 项 | 规定 |
+| Item | Rule |
 |---|---|
-| 分隔符 | 点号 `.` |
-| 格式 | `segment(.segment)*` |
-| 段内字符 | **应当**为 `[a-z0-9_-]`（与 `node_id` / 工具名同风格）；**不得**包含点号、空格、通配符 |
-| 大小写 | **应当**全小写；匹配**必须**大小写敏感（`ai.state` ≠ `Ai.State`） |
+| Separator | the dot `.` |
+| Format | `segment(.segment)*` |
+| Characters within a segment | **SHOULD** be `[a-z0-9_-]` (the same style as `node_id` / tool names); **MUST NOT** contain dots, spaces, or wildcards |
+| Case | **SHOULD** be all lowercase; matching **MUST** be case-sensitive (`ai.state` ≠ `Ai.State`) |
 
-### 3.2 域优先约定
+### 3.2 Domain-first convention
 
-路径**必须**遵循 **`<域>.<实体>.<动作>`**，域在最前：
+A path **MUST** follow **`<domain>.<entity>.<action>`**, with the domain first:
 
-| 层级 | 含义 | 例子 |
+| Layer | Meaning | Examples |
 |---|---|---|
-| 域 | 稳定、面向功能的分类 | `notify`、`system`、`ai`、`sensor`、`log`、`metric`、`auth`、`task` |
-| 实体 | 信号的来源或主体 | `web`、`file`、`state`、`temperature` |
-| 动作 | 具体发生了什么 | `download`、`modified`、`progress`、`changed` |
+| domain | stable, function-oriented classification | `notify`, `system`, `ai`, `sensor`, `log`, `metric`, `auth`, `task` |
+| entity | the source or subject of the signal | `web`, `file`, `state`, `temperature` |
+| action | what actually happened | `download`, `modified`, `progress`, `changed` |
 
-正确与错误的对比例子：
+Correct and incorrect examples side by side:
 
-| 写法 | 评价 |
+| Form | Assessment |
 |---|---|
-| `notify.web.download` | ✅ 域优先：接收方 `notify.**` 一劳永逸覆盖全部现有与未来通知 |
-| `web.notify.download` | ❌ 实体优先：新增一个通知来源就要改过滤规则 |
+| `notify.web.download` | ✅ domain first: a receiver's `notify.**` covers every present and future notification once and for all |
+| `web.notify.download` | ❌ entity first: every new notification source forces a change to the filtering rules |
 
-域优先的**规范后果**：接收方**应当**按域为单位订阅（`notify.**`、`log.**`、`metric.**`），而不是按实体逐个订阅。这是「不为新增来源修改过滤规则」得以成立的前提。
+The **normative consequence** of domain-first: receivers **SHOULD** subscribe per domain (`notify.**`, `log.**`, `metric.**`) rather than entity by entity. This is the premise that makes "no filtering-rule changes for new sources" hold.
 
-### 3.3 与 Pattern ID 的区别
+### 3.3 Difference from Pattern ID
 
-路径用点号，Pattern ID 用斜杠，两者**不得**混用：
+Paths use dots, Pattern IDs use slashes, and the two **MUST NOT** be mixed:
 
-| 对象 | 分隔符 | 格式 | 例子 |
+| Object | Separator | Format | Example |
 |---|---|---|---|
 | Signal path | `.` | `segment(.segment)*` | `notify.web.download` |
 | Pattern ID | `/` | `[namespace/]name` | `msp/publish-subscribe` |
 
-**不得**在路径里出现 `msp/...` 形式的分段，也**不得**把路径当作 `Signal.pattern` 的值。
+A path segment of the form `msp/...` **MUST NOT** appear in a path, and a path **MUST NOT** be used as the value of `Signal.pattern`.
 
-### 3.4 通配符
+### 3.4 Wildcards
 
-通配符**只**允许出现在模式的**末尾**，且只允许两种形式：
+A wildcard is allowed **only** at the **end** of a pattern, and only in two forms:
 
-| 形式 | 名称 | 语义 |
+| Form | Name | Semantics |
 |---|---|---|
-| `*` | 单段通配 | 恰好**一段**（≥ 1 个非空分段） |
-| `**` | 多段通配 | **零或多段**（包含前缀本身） |
+| `*` | single-segment wildcard | exactly **one** segment (≥ 1 non-empty segment) |
+| `**` | multi-segment wildcard | **zero or more segments** (including the prefix itself) |
 
-**必须**满足：
+**MUST** satisfy:
 
-> 通配符**必须**只出现在模式末尾。出现在中间的 `*` 是**字面量**，不会产生通配语义，且该模式**永不匹配任何路径**（见 §4.5 易错点 1）。
+> A wildcard **MUST** appear only at the end of the pattern. A `*` in the middle is a **literal**, produces no wildcard semantics, and the pattern **never matches any path** (see §4.5, pitfall 1).
 
-### 3.5 路径声明（可选）
+### 3.5 Path declaration (optional)
 
-`node.declare_signal(path, schema=None, description="")` **可以**把一条路径写进 `Manifest.signals`，供订阅者参考：
+`node.declare_signal(path, schema=None, description="")` **MAY** write a path into `Manifest.signals` for subscribers to consult:
 
-- 这是**声明**，不产生信号；
-- `schema` 是可选的 JSON Schema，**只用于对外宣告**，发布时**不做**校验、订阅时**不做**强制；
-- `signal_source` 会隐式声明路径。
+- this is a **declaration** and produces no signal;
+- `schema` is an optional JSON Schema, used **only for announcing**; it is **not** validated at publish time and **not** enforced at subscribe time;
+- `signal_source` declares the path implicitly.
 
-因此清单中的路径列表**可以**与运行时实际发布的路径不一致——实现**不得**把它当成准入清单。
+The path list in a manifest **MAY** therefore disagree with the paths actually published at runtime — implementations **MUST NOT** treat it as an admission list.
 
 ---
 
-## 4. 通配符匹配算法
+## 4. Wildcard matching algorithm
 
-匹配是**纯函数**：`pattern_matches(pattern, path) -> bool`。接收方对每个注册的模式独立调用它。本节逐行对应参考实现。
+Matching is a **pure function**: `pattern_matches(pattern, path) -> bool`. The receiver calls it independently for each registered pattern. This section maps line by line onto the reference implementation.
 
-### 4.1 算法
+### 4.1 Algorithm
 
 ```
 pattern_matches(pattern, path):
-    # 分支 1：精确相等
+    # Branch 1: exact equality
     if pattern == path:
         return True
 
-    # 分支 2：多段通配 ".**"
+    # Branch 2: multi-segment wildcard ".**"
     if pattern.endswith(".**"):
-        prefix = pattern[:-3]                  # 去掉末尾 3 个字符 ".**"
+        prefix = pattern[:-3]                  # strip the trailing 3 characters ".**"
         return path == prefix or path.startswith(prefix + ".")
 
-    # 分支 3：单段通配 ".*"
+    # Branch 3: single-segment wildcard ".*"
     if pattern.endswith(".*"):
-        prefix = pattern[:-2]                  # 去掉末尾 2 个字符 ".*"
+        prefix = pattern[:-2]                  # strip the trailing 2 characters ".*"
         if not path.startswith(prefix + "."):
             return False
-        return "." not in path[len(prefix) + 1:]   # 剩余部分不能再含点
+        return "." not in path[len(prefix) + 1:]   # the remainder must not contain a dot
 
-    # 分支 4：其余一律不匹配
+    # Branch 4: everything else does not match
     return False
 ```
 
-三条判定**必须**按上述顺序执行，命中即返回。
+The three tests **MUST** be executed in the order above, returning on the first hit.
 
-### 4.2 分支逐一说明
+### 4.2 The branches one by one
 
-| 分支 | 条件 | 结果 | 关键点 |
+| Branch | Condition | Result | Key point |
 |---|---|---|---|
-| 1 | `pattern == path` | `True` | 无通配符的常规路径走这一支。**注意**：这一支对**含 `*` 的字符串也生效**——当模式与路径逐字相同时（例如两侧都是 `ai.*`）返回 `True` |
-| 2 | 模式以 `.**` 结尾 | `path == prefix` **或** `path.startswith(prefix + ".")` | `prefix` 是去掉 `.**` 后的剩余部分。注意 `path == prefix` 分支意味着 `.**` 匹配**前缀自身**（零段） |
-| 3 | 模式以 `.*` 结尾 | 前缀匹配且剩余部分不含点 | `.*` **不**匹配前缀自身——它要求**至少**一段 |
-| 4 | 其它 | `False` | 这是「模式中间出现 `*`」与「模式不含通配符但不相等」的落点 |
+| 1 | `pattern == path` | `True` | ordinary paths without wildcards take this branch. **Note**: this branch **also applies to strings containing `*`** — when pattern and path are literally identical (for example both sides are `ai.*`) it returns `True` |
+| 2 | pattern ends with `.**` | `path == prefix` **or** `path.startswith(prefix + ".")` | `prefix` is the remainder after removing `.**`. Note that the `path == prefix` branch means `.**` matches **the prefix itself** (zero segments) |
+| 3 | pattern ends with `.*` | prefix matches and the remainder contains no dot | `.*` does **not** match the prefix itself — it requires **at least** one segment |
+| 4 | anything else | `False` | this is where "a `*` in the middle of the pattern" and "a pattern without wildcards that is not equal" land |
 
-### 4.3 按算法推导的匹配结果
+### 4.3 Match results derived from the algorithm
 
-下表**必须**与实现一致：
+The table below **MUST** agree with the implementation:
 
-| 模式 | 语义 | 匹配示例 | 不匹配示例 |
+| Pattern | Semantics | Matching example | Non-matching example |
 |---|---|---|---|
-| `ai.state` | 精确 | `ai.state` | `ai.state.x`、`ai`、`ai.states` |
-| `ai.*` | 恰好一段 | `ai.state`、`ai.progress` | `ai`、`ai.state.x` |
-| `system.**` | 零或多段 | `system`、`system.cpu`、`system.cpu.load.1` | `systematic`、`system.cpuX`（不含点则 `path == prefix` 只对 `system` 成立） |
-| `*` | 中间/落单通配符（字面量） | —— | **全部路径**（恒为 `False`） |
-| `ai.*.state` | 中间的 `*` 视为字面量 | —— | **全部路径**（恒为 `False`） |
-| `**` | 不是以 `.**` 结尾 | —— | **全部路径**（恒为 `False`） |
-| `*.state` | 中间的 `*` 视为字面量（不以 `.*` / `.**` 结尾，落第 4 分支） | 仅**逐字相同**的路径 `*.state` | 其余全部，含 `ai.state`、`*.x`、`*.a.b` |
-| `` (空串) | 精确分支命中空路径 | 空路径 `""` | 其余全部 |
+| `ai.state` | exact | `ai.state` | `ai.state.x`, `ai`, `ai.states` |
+| `ai.*` | exactly one segment | `ai.state`, `ai.progress` | `ai`, `ai.state.x` |
+| `system.**` | zero or more segments | `system`, `system.cpu`, `system.cpu.load.1` | `systematic`, `system.cpuX` (without a dot, `path == prefix` holds only for `system`) |
+| `*` | wildcard in the middle / standalone (literal) | —— | **every path** (always `False`) |
+| `ai.*.state` | the `*` in the middle is treated as a literal | —— | **every path** (always `False`) |
+| `**` | does not end with `.**` | —— | **every path** (always `False`) |
+| `*.state` | the `*` in the middle is treated as a literal (it ends with neither `.*` nor `.**`, so it falls to branch 4) | only the path `*.state` that is **literally identical** | everything else, including `ai.state`, `*.x`, `*.a.b` |
+| `` (empty string) | the exact branch matches the empty path | the empty path `""` | everything else |
 
-> 上表第 7、8 行的行为是算法的**字面结果**，不是设计意图。实现**不得**为了让它们「看起来更合理」而偏离算法——匹配规则是互操作契约的一部分（[README.md §1.3](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#1-修订历史) 规定改匹配算法**必须**发新修订号）。
+> The behaviour in rows 7 and 8 of the table above is the **literal result** of the algorithm, not the design intent. Implementations **MUST NOT** deviate from the algorithm in order to make those rows "look more reasonable" — the matching rules are part of the interoperability contract ([README.md §1.3](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#1-修订历史) states that changing the matching algorithm **MUST** ship a new revision number).
 
-### 4.4 两个易错点（**必须**明确）
+### 4.4 Two pitfalls (**MUST** be explicit)
 
-**易错点 1：通配符只在模式末尾有效，中间的 `*` 是字面量且恒不匹配。**
+**Pitfall 1: a wildcard is effective only at the end of a pattern; a `*` in the middle is a literal and never matches.**
 
-`ai.*.state` **不会**匹配 `ai.cpu.state`。算法的第 3 分支只认「以 `.*` 结尾」，而 `ai.*.state` 以 `state` 结尾，于是落到第 4 分支返回 `False`。同理：
+`ai.*.state` does **not** match `ai.cpu.state`. Branch 3 of the algorithm recognises only "ends with `.*`", and `ai.*.state` ends with `state`, so it falls to branch 4 and returns `False`. Likewise:
 
-- `system.*.cpu` → 恒 `False`；
-- `*.state` → 仅当路径**逐字等于** `*.state` 时为真，其余一律 `False`（它不以 `.*` 结尾，落第 4 分支）。
+- `system.*.cpu` → always `False`;
+- `*.state` → true only when the path is **literally equal** to `*.state`, `False` otherwise (it does not end with `.*`, so it falls to branch 4).
 
-> 结论：需要「任意一层」时**不得**把 `*` 写在中间。改用 `**` 放在**末尾**（`ai.**`），它会匹配 `ai` 及其下任意深度——代价是它也匹配单段与更深的多段，精度低于「恰好一段」。
+> Conclusion: when "any one layer" is needed, `*` **MUST NOT** be written in the middle. Use `**` at the **end** instead (`ai.**`), which matches `ai` and any depth below it — at the cost of also matching a single segment and deeper multiple segments, with lower precision than "exactly one segment".
 
-**易错点 2：空模式与「不含点号的前缀」按算法实际结果，不要臆测。**
+**Pitfall 2: empty patterns and "prefixes that contain no dot" behave as the algorithm actually says — do not guess.**
 
-逐个推导（`prefix` 为空的情况）：
+Derivation one by one (the case where `prefix` is empty):
 
-| 模式 | `prefix` | 分支 2/3 的实际行为 | 实际结果 |
+| Pattern | `prefix` | Actual behaviour of branches 2/3 | Actual result |
 |---|---|---|---|
-| `*` | 不适用 | 不以 `.**` 也不以 `.*` 结尾 → 落第 4 分支 | 恒 `False`（除逐字相等的路径 `"*"`） |
-| `.*` | `""` | 第 3 分支：要求 `path.startswith(".")`，然后要求 `path[1:]` 不含点 | 匹配 `.a` 这类路径（字面以点开头）；对 `a.b` 为 `False` |
-| `.**` | `""` | 第 2 分支：`path == ""` 或 `path.startswith(".")` | 匹配 `""` 与任何以点开头的路径 |
-| `system.*` | `system` | 第 3 分支：`path.startswith("system.")`，且 `path[7:]` 不含点 | 匹配 `system.cpu`，不匹配 `system`（**`.*` 不匹配前缀自身**）与 `system.cpu.load` |
-| `system.**` | `system` | 第 2 分支：`path == "system"` 或 `path.startswith("system.")` | 匹配 `system`、`system.cpu`、`system.cpu.load`（**`.**` 匹配前缀自身**） |
-| `**` | 不适用 | 不以 `.**` 结尾（只有 2 个字符）→ 落第 4 分支 | 恒 `False` |
+| `*` | not applicable | ends with neither `.**` nor `.*` → falls to branch 4 | always `False` (except the literally equal path `"*"`) |
+| `.*` | `""` | branch 3: requires `path.startswith(".")`, then requires `path[1:]` to contain no dot | matches paths such as `.a` (literally starting with a dot); `False` for `a.b` |
+| `.**` | `""` | branch 2: `path == ""` or `path.startswith(".")` | matches `""` and any path starting with a dot |
+| `system.*` | `system` | branch 3: `path.startswith("system.")` and `path[7:]` contains no dot | matches `system.cpu`; does not match `system` (**`.*` does not match the prefix itself**) nor `system.cpu.load` |
+| `system.**` | `system` | branch 2: `path == "system"` or `path.startswith("system.")` | matches `system`, `system.cpu`, `system.cpu.load` (**`.**` matches the prefix itself**) |
+| `**` | not applicable | does not end with `.**` (only 2 characters) → falls to branch 4 | always `False` |
 
-两个由此推出的规范级结论：
+Two normative-level conclusions follow:
 
-1. **`system.*` 不匹配 `system`**，而 **`system.**` 匹配 `system`**。想「域下所有内容（含域本身）」**必须**用 `.**`。
-2. **裸 `*` 与裸 `**` 都不是有效模式**。它们恒不匹配（除逐字相等），**应当**被视为使用者笔误；实现**可以**在注册时警告，但**不得**把它们当成「匹配一切」的简写。
+1. **`system.*` does not match `system`**, whereas **`system.**` does match `system`**. To mean "everything under a domain (including the domain itself)" you **MUST** use `.**`.
+2. **A bare `*` and a bare `**` are not valid patterns.** They never match (except literally), **SHOULD** be regarded as a user typo, and implementations **MAY** warn at registration time but **MUST NOT** treat them as shorthand for "match everything".
 
-### 4.5 匹配的作用域
+### 4.5 Scope of matching
 
-| 场景 | 是否使用路径通配符 |
+| Scenario | Uses path wildcards |
 |---|---|
-| `signal` 的本地回调过滤（`on()`） | ✅ 是 |
-| 工具名（`payload.tool`） | ❌ **否**——**必须**精确匹配（`_tools` 是字典查表） |
-| Pattern ID（`Signal.pattern`） | ❌ **否**——**必须**精确匹配（`protocol.patterns` 是字典查表） |
-| `node_id` | ❌ **否**——**必须**精确匹配（`connections` / `_neighbors` 是字典查表） |
-| 授权表的 `pub` / `sub` 条目 | ✅ 复用 `pattern_matches`（[security.md §3.3](../security.md#33-四个动作)） |
-因此：**工具调用不受通配符影响**。声明 `get_*` 这样的工具名**不会**让 `get_weather` 可被 `get_*` 调用。
+| local callback filtering for `signal` (`on()`) | ✅ yes |
+| tool names (`payload.tool`) | ❌ **no** — **MUST** match exactly (`_tools` is a dictionary lookup) |
+| Pattern ID (`Signal.pattern`) | ❌ **no** — **MUST** match exactly (`protocol.patterns` is a dictionary lookup) |
+| `node_id` | ❌ **no** — **MUST** match exactly (`connections` / `_neighbors` are dictionary lookups) |
+| `pub` / `sub` entries in the authorization table | ✅ reuses `pattern_matches` ([security.md §3.3](../security.md#33-the-four-actions)) |
+Therefore: **tool invocation is not affected by wildcards**. Declaring a tool name such as `get_*` does **not** make `get_weather` invocable as `get_*`.
 
 ---
 
-## 5. 消息流
+## 5. Message flow
 
-### 5.1 广播与本地过滤
+### 5.1 Broadcast and local filtering
 
 ```
- 发布方 node_c                                   接收方 node_d
+ Publisher node_c                            Receiver node_d
       │                                              │
-      │ 1. @node.signal("ai.state") 的生成器 yield    │
+      │ 1. @node.signal("ai.state") generator yields │
       │      {"status": "thinking", "seq": 0}        │
-      │ 2. node.publish("ai.state", payload)          │
-      │ 3. 加锁快照 connections ─────────────────────┐│
-      │                                              ││
-      │ ── signal(path="ai.state", payload=…) ──────▶│ 4. 读循环 _dispatch
-      │        （对每个已连对端各发一份）             │     第 1 步不命中
-      │                                              │     第 2 步不命中（pattern=None）
+      │ 2. node.publish("ai.state", payload)         │
+      │ 3. lock, snapshot connections ──────────────┐│
+      │                                             ││
+      │ ── signal(path="ai.state", payload=…) ──────▶│ 4. read loop _dispatch
+      │      (one copy per connected peer)           │     step 1: no match
+      │                                              │     step 2: no match (pattern=None)
       │                                              │     → _dispatch_core → _on_signal
-      │                                              │ 5. 遍历回调表
-      │                                              │     on("ai.state") 命中 → 调用
-      │                                              │     on("ai.*")     命中 → 调用
-      │                                              │     on("system.**") 不命中 → 跳过
-      │                                              │ 6. 命中回调异常 → 记 warning，继续下一个
+      │                                              │ 5. iterate the handler table
+      │                                              │     on("ai.state") match → call
+      │                                              │     on("ai.*")     match → call
+      │                                              │     on("system.**") no match → skip
+      │                                              │ 6. handler exception → log warning, next
       ▼                                              ▼
 ```
 
-### 5.2 扇出时的失败处理
+### 5.2 Failure handling during fan-out
 
 ```
  publish(path, payload)
         │
-        ├─ 加锁：peers = list(connections.items())
+        ├─ lock: peers = list(connections.items())
         │
         └─ for peer_id, conn in peers:
                try:
                    conn.send(encoded)
                except ConnectionClosed:
-                   _handle_disconnect(peer_id, conn)   ← 清理该对端，继续下一个
+                   _handle_disconnect(peer_id, conn)   ← clean up this peer, continue with the next
 ```
 
-**必须**：一个对端的发送失败**不得**中断循环，**不得**向外抛出异常。
+**MUST**: a send failure for one peer **MUST NOT** interrupt the loop and **MUST NOT** throw outwards.
 
-### 5.3 「没有总线的总线」
+### 5.3 "The bus without a bus"
 
-广播模型不需要中心 broker 就能拼出中间件拓扑：**每个中间件就是一个普通节点**。
+The broadcast model needs no central broker to assemble a middleware topology: **each middleware is just an ordinary node**.
 
 ```
- 来源节点群                     中间件节点 fmt                观察者节点群
-   │                              │                              │
-   │ ── signal(log.app.raw) ────▶ │                              │
-   │ ── signal(log.web.raw) ────▶ │                              │
-   │                              │ @on("log.**") 收全部原始日志  │
-   │                              │ 转换（时间戳、级别、脱敏）    │
-   │                              │ publish("log.formatted.**")  │
-   │                              │ ───────────────────────────▶ │ @on("log.formatted.**")
-   ▼                              ▼                              ▼
+ Source nodes                   Middleware node fmt                          Observer nodes
+   │                                    │                                            │
+   │ ── signal(log.app.raw) ──────────▶ │                                            │
+   │ ── signal(log.web.raw) ──────────▶ │                                            │
+   │                                    │ @on("log.**") collect raw logs             │
+   │                                    │ transform (timestamps, levels, redaction)  │
+   │                                    │ publish("log.formatted.**")                │
+   │                                    │ ─────────────────────────────────────────▶ │ @on("log.formatted.**")
+   ▼                                    ▼                                            ▼
 ```
 
-规范条文：
+Normative provisions:
 
-1. 中间件**必须**是一个普通 `MSPNode`——**不得**要求协议层提供任何 broker/代理角色；
-2. 中间件**应当**「订阅一个域、发布到另一个域」（`log.**` → `log.formatted.**`），使下游可以用域粒度切换「原始流」与「加工流」；
-3. 中间件**不得**修改它转发的路径语义——**应当**通过**新增**域或层级（`log.formatted.*`）来表达加工，而不是复用原路径；
-4. 中间件的转发**不得**造成同一路径上的自激循环（例如同时 `@on("log.**")` 与 `publish("log.x")`）；实现**应当**通过域隔离避免。
+1. the middleware **MUST** be an ordinary `MSPNode` — the protocol layer **MUST NOT** be required to provide any broker/proxy role;
+2. the middleware **SHOULD** "subscribe to one domain and publish to another" (`log.**` → `log.formatted.**`), so that downstream can switch between the "raw stream" and the "processed stream" at domain granularity;
+3. the middleware **MUST NOT** change the semantics of the path it forwards — it **SHOULD** express processing by **adding** a domain or layer (`log.formatted.*`) rather than reusing the original path;
+4. a middleware's forwarding **MUST NOT** create a self-exciting loop on the same path (for example `@on("log.**")` and `publish("log.x")` at the same time); implementations **SHOULD** avoid this through domain isolation.
 
-### 5.4 版本化路径
+### 5.4 Versioned paths
 
-路径是**字符串**，因此演进靠**并行挂载**而不是改语义：
+Paths are **strings**, so evolution relies on **mounting in parallel** rather than changing semantics:
 
-| 做法 | 评价 |
+| Approach | Assessment |
 |---|---|
-| `x.changed` 与 `x.changed.v2` **并行发布** | ✅ 推荐：老订阅者继续收 `x.changed`，新订阅者用 `x.changed.v2`；两者互不干扰，切换是订阅侧的选择 |
-| 直接把 `x.changed` 的含义改成 v2 | ❌ **不得**：老订阅者会静默收到语义不同的数据 |
+| publishing `x.changed` and `x.changed.v2` **in parallel** | ✅ recommended: old subscribers keep receiving `x.changed`, new subscribers use `x.changed.v2`; the two do not interfere, and switching is a choice on the subscriber side |
+| changing the meaning of `x.changed` to v2 in place | ❌ **MUST NOT**: old subscribers would silently receive data with different semantics |
 
-论证：
+Argument:
 
-1. **匹配算法是前缀式的**。`x.changed.**` 会同时匹配 `x.changed` 与 `x.changed.v2`——因为第 2 分支要求 `path == "x.changed"` 或 `path.startswith("x.changed.")`，两种都成立。因此「用通配符一次订阅全部版本」**可以**做到，是升级期的便利。
-2. **精确订阅是隔离手段**。只想锁定 v1 的订阅者用精确模式 `x.changed`，它**不会**匹配 `x.changed.v2`。
-3. **域优先约定让版本可以放在动作之后**。`<域>.<实体>.<动作>` 的第三层是动作，版本号**应当**作为动作之后的新分段出现（`x.changed.v2`），**不得**插在域与实体之间（`x.v2.changed` 会破坏 `x.**` 的域粒度）。
+1. **The matching algorithm is prefix-based.** `x.changed.**` matches both `x.changed` and `x.changed.v2` — because branch 2 requires `path == "x.changed"` or `path.startswith("x.changed.")`, and both hold. "Subscribing to all versions at once with a wildcard" is therefore **possible**, which is convenient during a migration.
+2. **Exact subscription is the isolation tool.** A subscriber that wants to pin itself to v1 uses the exact pattern `x.changed`, which does **not** match `x.changed.v2`.
+3. **The domain-first convention lets the version follow the action.** The third layer of `<domain>.<entity>.<action>` is the action, so the version number **SHOULD** appear as a new segment after the action (`x.changed.v2`), and **MUST NOT** be inserted between domain and entity (`x.v2.changed` would break the domain granularity of `x.**`).
 
-**应当**：破坏性变更时**同时**发布旧版与新版至少一个版本周期，并在 `Manifest.signals` 中把两者都声明。
+**SHOULD**: on a breaking change, publish the old and the new version **side by side** for at least one version cycle, and declare both in `Manifest.signals`.
 
-### 5.5 发布方的自我可见性
+### 5.5 Publisher self-visibility
 
-发布**不**回环到本节点：`publish()` 只遍历 `connections`，调用方自己的 `on()` 回调**不会**被自己发布的信号触发。
+A publish does **not** loop back to the node itself: `publish()` iterates only over `connections`, so the caller's own `on()` callbacks are **not** triggered by signals it published itself.
 
-**必须**明确这一点——实现**不得**依赖「本地发布也会触发本地回调」的假设：
+This **MUST** be stated explicitly — implementations **MUST NOT** rely on the assumption that "a local publish also triggers local callbacks":
 
-- 需要本地处理时**必须**在 `publish()` 之后直接调用本地函数，或**可以**实现一个显式的本地回环（非本规范要求）；
-- 这是与 MQTT 等「客户端订阅自己的主题会收到自己消息」的模型的**已知差异**，跨实现互操作时**不得**假设对方会回环。
+- when local processing is needed, the local function **MUST** be called directly after `publish()`, or an explicit local loopback **MAY** be implemented (not required by this specification);
+- this is a **known difference** from models such as MQTT, where "a client subscribing to its own topic receives its own messages"; in cross-implementation interop you **MUST NOT** assume the other side loops back.
 
 ---
 
-## 6. 数据类型
+## 6. Data types
 
-### 6.1 `signal` 信号的字段
+### 6.1 Fields of the `signal` signal
 
-| 字段 | 类型 | 必需 | 说明 |
+| Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | `"signal"` | **必须** | |
-| `source` | `str` | **必须** | 发布方 `node_id`；接收方**可以**据此做来源过滤（当前**未**实现，见 §10 G4） |
-| `path` | `str` | **必须** | 路径，见 §3 |
-| `payload` | `object` | **必须** | 任意 JSON 对象；缺省 `{}` |
-| `target` | `null` | **必须** | 广播无目标 |
-| `pattern` | `null` | **必须** | 核心模式不写路由键 |
-| `reqid` | `null` | **必须** | 广播不关联 |
-| `timestamp` | `float` | **必须** | Unix 时间戳，发布方本地时钟 |
+| `type` | `"signal"` | **MUST** | |
+| `source` | `str` | **MUST** | the publisher's `node_id`; the receiver **MAY** filter by source on that basis (currently **not** implemented, see §10 G4) |
+| `path` | `str` | **MUST** | the path, see §3 |
+| `payload` | `object` | **MUST** | any JSON object; defaults to `{}` |
+| `target` | `null` | **MUST** | a broadcast has no target |
+| `pattern` | `null` | **MUST** | core patterns write no routing key |
+| `reqid` | `null` | **MUST** | a broadcast correlates nothing |
+| `timestamp` | `float` | **MUST** | Unix timestamp, from the publisher's local clock |
 
-JSON 示例：
+JSON example:
 
 ```json
 {
@@ -442,199 +442,199 @@ JSON 示例：
 }
 ```
 
-`Signal` 信封字段一律 **snake_case**。`payload` 内部字段名由**发布者**自定，**应当**与发布者 `Manifest.signals[path].schema` 的声明一致；接收方**必须**对未知字段宽容（不得因未知字段报错）。
+`Signal` envelope fields are always **snake_case**. Field names inside `payload` are chosen by the **publisher** and **SHOULD** agree with the declaration of the publisher's `Manifest.signals[path].schema`; the receiver **MUST** be lenient about unknown fields (it must not fail on unknown fields).
 
-### 6.2 回调注册项
+### 6.2 Callback registration entries
 
-`handlers` 是 `list[tuple[Optional[str], Callable]]`：
+`handlers` is a `list[tuple[Optional[str], Callable]]`:
 
-| 元素 | 类型 | 说明 |
+| Element | Type | Description |
 |---|---|---|
-| 第 1 项 | `str \| None` | 路径模式；`None` 匹配全部 |
-| 第 2 项 | `Callable[[Signal], None]` | 回调函数 |
+| 1st item | `str \| None` | path pattern; `None` matches everything |
+| 2nd item | `Callable[[Signal], None]` | the callback function |
 
-**没有**注销 API、**没有**优先级、**没有**「只触发一次」语义。遍历顺序是注册顺序，但**不得**依赖顺序——见 §10 G2。
+There is **no** deregistration API, **no** priority, and **no** "fire once" semantics. Iteration order is registration order, but **MUST NOT** be relied upon — see §10 G2.
 
-### 6.3 无订阅表
+### 6.3 No subscription table
 
-**必须**明确：实现中**不存在**订阅表（`PathMatcher` 容器已在广播模型落地时删除）。
+It **MUST** be stated explicitly: no subscription table exists in the implementation (the `PathMatcher` container was deleted when the broadcast model landed).
 
-| 维度 | 已删除的订阅表 | 本模式的 `handlers` | `sub` 授权过滤 |
+| Dimension | The removed subscription table | This pattern's `handlers` | `sub` authorization filtering |
 |---|---|---|---|
-| 位置 | 发布方远端 | 接收方本地 | 发布方本地 |
-| 内容 | 「哪个对端想要哪个路径」 | 「本进程哪个回调关心哪个路径」 | 「允许哪个对端收哪些路径」 |
-| 变更方式 | 需要 subscribe / unsubscribe 信号 | 本地调用 `on()`，**零线上报文** | 本地 Preset 配置 |
-| 目的 | 带宽优化 | 消费分发 | **安全** |
-| 状态 | 已删除 | ✅ 存在 | 🔵 规划中 |
+| Position | the publisher's remote side | the receiver's local side | the publisher's local side |
+| Content | "which peer wants which path" | "which callback in this process cares about which path" | "which peer is allowed to receive which paths" |
+| How it changes | needs subscribe / unsubscribe signals | local `on()` call, **zero wire messages** | local Preset configuration |
+| Purpose | bandwidth optimisation | consumption dispatch | **security** |
+| Status | removed | ✅ present | 🔵 planned |
 
-`sub` 授权与已删除的订阅表**形状相似但性质不同**：订阅表回答「谁**想**要」，`sub` 授权回答「谁**能**看」。因此按**安全**需要加回 per-peer 过滤，**不掺**带宽优化（[security.md §3.7](../security.md#37-与广播模型的张力)）。
-
----
-
-## 7. 边界
-
-### 7.1 通配符的用武之地
-
-| 场景 | 说明 |
-|---|---|
-| **观察 / 监控面板** | `on("metric.**")` 一次覆盖全部指标 |
-| **日志聚合** | `on("log.**")` 收全部日志域 |
-| **权限审计** | `on("auth.**")` 收全部鉴权事件 |
-| **粗粒度感知** | `on("notify.**")` 覆盖全部现有与未来通知来源 |
-| **任务旁观** | `on("task.**")` 旁观 `msp/task` 的状态与产物广播 |
-
-共同点：**接收方预先不知道未来会出现哪些具体路径**，但知道它们**一定**落在某个域下。这正是域优先约定的服务对象。
-
-### 7.2 通配符**不**适用之处
-
-| 场景 | 原因 |
-|---|---|
-| 工具调用 | `payload.tool` **必须**精确匹配（`_tools` 字典查表）；工具名集合是**封闭**的、随握手宣告的 |
-| Pattern 路由 | `Signal.pattern` **必须**精确匹配（`protocol.patterns` 字典查表） |
-| `node_id` 定位 | 连接表与邻居表是字典查表；`node.connections()` / `on_connected` 的 peer 参数都是精确 ID |
-
-**不应**把「通配符很方便」推广到这三处——它们都需要**确定性**：调用一个工具、路由一个模式、对着一个对端发包，都不能有「可能匹配到多个」的歧义。
-
-### 7.3 已知行为边界
-
-| 边界 | 说明 |
-|---|---|
-| 无送达确认 | `publish()` 返回 `None`，不知道谁收到了 |
-| 无顺序承诺跨对端 | 不同对端的接收顺序不保证一致 |
-| 无去重 | 同一路径收到两条内容相同的信号，**必须**当作两次事件 |
-| 无历史 | 晚连接的对端收不到连接前的信号；**不得**期待补发 |
-| 无本地回环 | 见 §5.5 |
-| 无过滤下推 | 见 §8 |
+`sub` authorization and the removed subscription table are **similar in shape but different in nature**: the subscription table answers "who **wants** it", `sub` authorization answers "who **can** see it". Per-peer filtering is therefore added back for **security** needs, **without** mixing in bandwidth optimisation ([security.md §3.7](../security.md#37-tension-with-the-broadcast-model)).
 
 ---
 
-## 8. 安全考量
+## 7. Boundaries
 
-### 8.1 广播 = 全发，无法按内容过滤
+### 7.1 Where wildcards earn their keep
 
-**必须**认清本模式的默认形态：**`publish()` 把信号发给每一个已连对端，不区分对象，也不看内容。**
+| Scenario | Description |
+|---|---|
+| **observation / monitoring dashboards** | `on("metric.**")` covers every metric in one go |
+| **log aggregation** | `on("log.**")` receives the whole log domain |
+| **authorization auditing** | `on("auth.**")` receives every authentication event |
+| **coarse-grained awareness** | `on("notify.**")` covers every present and future notification source |
+| **task observation** | `on("task.**")` observes the status and artifact broadcasts of `msp/task` |
 
-由此推出的规范后果：
+The common thread: **the receiver does not know in advance which concrete paths will appear**, but knows that they **will** fall under some domain. This is exactly what the domain-first convention serves.
 
-1. 发布**敏感数据**前，发布方**必须**确认接收面的信任假设：本机自组网下所有对端共享同一 OS 用户（§8.1 的前提，此时 `sub` 授权按设计**整表绕过**），跨机部署则**必须**配置 `sub` 授权——两者都不成立时，协议没有可依赖的拦阻；
-2. 需要「只给某些对端看」时，**不得**依赖路径命名（给路径起个晦涩名字**不构成**访问控制）；
-3. 正确的收窄手段是**发送侧扇出过滤**（`sub` 授权），见 §8.2。
+### 7.2 Where wildcards do **not** apply
 
-### 8.2 `sub` 授权是发送侧扇出过滤（✅ 已实现）
+| Scenario | Reason |
+|---|---|
+| tool invocation | `payload.tool` **MUST** match exactly (`_tools` dictionary lookup); the set of tool names is **closed** and announced during the handshake |
+| Pattern routing | `Signal.pattern` **MUST** match exactly (`protocol.patterns` dictionary lookup) |
+| `node_id` location | the connection table and the neighbour table are dictionary lookups; the peer arguments of `node.connections()` / `on_connected` are exact IDs |
 
-按 [security.md §3.6](../security.md#36-执行点只有两处) 的设计，出站过滤的执行点**只有一处**：`publish()` 的扇出循环——每个对端查 `sub` 授权，未授权的跳过。
+"Wildcards are convenient" **SHOULD NOT** be generalised to these three places — all of them need **determinism**: invoking a tool, routing a pattern, and sending a frame to one peer must not carry the ambiguity of "possibly matching several".
 
-| 项 | 规定 | 状态 |
+### 7.3 Known behavioural boundaries
+
+| Boundary | Description |
+|---|---|
+| no delivery confirmation | `publish()` returns `None`; you do not know who received it |
+| no cross-peer ordering promise | the receive order at different peers is not guaranteed to agree |
+| no deduplication | two signals with identical content on the same path **MUST** be treated as two events |
+| no history | peers that connect late do not receive signals published before they connected; **MUST NOT** expect backfill |
+| no local loopback | see §5.5 |
+| no filter push-down | see §8 |
+
+---
+
+## 8. Security considerations
+
+### 8.1 Broadcast = send to all, no filtering by content
+
+**MUST** recognise the default shape of this pattern: **`publish()` sends the signal to every connected peer, without distinguishing recipients and without looking at the content.**
+
+The normative consequences:
+
+1. before publishing **sensitive data**, the publisher **MUST** confirm the trust assumptions of the receiving side: under local self-organising networking all peers share the same OS user (the premise of §8.1, in which `sub` authorization is, by design, **bypassed for the whole table**), whereas a cross-machine deployment **MUST** configure `sub` authorization — when neither holds, the protocol has no dependable interception to offer;
+2. when "show it only to certain peers" is needed, you **MUST NOT** rely on path naming (giving a path an obscure name **does not constitute** access control);
+3. the correct narrowing mechanism is **sender-side fan-out filtering** (`sub` authorization), see §8.2.
+
+### 8.2 `sub` authorization is sender-side fan-out filtering (✅ implemented)
+
+Following the design of [security.md §3.6](../security.md#36-enforcement-points-only-two), there is **exactly one** enforcement point for outbound filtering: the fan-out loop of `publish()` — each peer's `sub` authorization is consulted and unauthorised peers are skipped.
+
+| Item | Rule | Status |
 |---|---|---|
-| 位置 | `publish()` 的扇出循环内，每个对端一次判定 | 🔵 规划中（设计已定稿） |
-| 匹配方式 | 复用 `pattern_matches`，对 `sub` 的 path 模式列表逐条比对 | 🔵 |
-| 默认 | `sub: False`（网络对端默认**不**收我的广播） | 🔵 |
-| 本机例外 | loopback / UDS 同用户跳过整张授权表 | 🔵 |
-| 与订阅表的区别 | 「谁**能**看」（安全），不是「谁**想**要」（带宽） | — |
+| Location | inside the fan-out loop of `publish()`, one decision per peer | 🔵 planned (design finalised) |
+| Matching | reuses `pattern_matches`, comparing the path-pattern list in `sub` entry by entry | 🔵 |
+| Default | `sub: False` (network peers **do not** receive my broadcasts by default) | 🔵 |
+| Local exception | loopback / UDS peers under the same user skip the whole authorization table | 🔵 |
+| Difference from the subscription table | "who **can** see it" (security), not "who **wants** it" (bandwidth) | — |
 
-**必须**：
+**MUST**:
 
-1. `sub` 过滤**必须**在**发送侧**执行——**不得**依赖接收方自律（接收方可能是攻击者）；
-2. 过滤**不得**改变报文字节（不裁剪 `payload`、不改 `path`），只决定「发或不发」；
-3. 未实现授权时**必须**在文档与部署说明中明确「广播对全部已连对端可见」，**不得**默默假定安全。
+1. `sub` filtering **MUST** be enforced on the **sender side** — you **MUST NOT** rely on the receiver's self-restraint (the receiver may be an attacker);
+2. filtering **MUST NOT** alter the message bytes (no trimming of `payload`, no change to `path`); it only decides "send or do not send";
+3. while authorization is unimplemented, the documentation and deployment notes **MUST** state explicitly that "broadcasts are visible to all connected peers", and **MUST NOT** silently assume safety.
 
-### 8.3 接收侧不受信任
+### 8.3 The receiving side is untrusted
 
-| 风险 | 对策 |
+| Risk | Mitigation |
 |---|---|
-| 恶意对端洪泛广播 | 接收方**应当**做本地限流；协议层当前**没有**入站速率限制（§10 G5） |
-| 回调抛出异常被用作放大手段 | 异常被捕获并记日志（§2.3 第 3 条）——但**日志本身**可能被洪泛淹没，实现**应当**做日志采样 |
-| 回调中执行副作用 | 回调运行在读循环线程；实现**必须**把重活移交给工作线程（§2.3 第 5 条） |
-| `payload` 承载恶意内容 | 接收方**必须**把 `payload` 当不可信输入解析；协议层**不**校验 `payload` 结构 |
+| a malicious peer floods broadcasts | receivers **SHOULD** rate-limit locally; the protocol layer currently has **no** inbound rate limit (§10 G5) |
+| callback exceptions used as an amplification vector | exceptions are caught and logged (§2.3 item 3) — but **the logs themselves** can be drowned by a flood, so implementations **SHOULD** sample their logs |
+| side effects executed inside callbacks | callbacks run on the read-loop thread; implementations **MUST** hand heavy work to a worker thread (§2.3 item 5) |
+| `payload` carrying malicious content | receivers **MUST** parse `payload` as untrusted input; the protocol layer does **not** validate the structure of `payload` |
 
-### 8.4 路径命名不是权限
+### 8.4 Path naming is not authorization
 
-**不得**用路径命名承担授权功能：
+You **MUST NOT** use path naming to carry authorization functionality:
 
-- 路径是**公开的**（随广播发出，亦随 `Manifest.signals` 交换）；
-- 路径匹配是**接收方本地**行为，攻击者可以注册任意模式；
-- 因此「只有知道路径的人才能收到」**不成立**——在广播模型下，知道与否不影响**是否收到**，只影响**是否处理**。真正决定「是否收到」的只有发送侧的 `sub` 过滤。
+- paths are **public** (emitted with the broadcast and also exchanged with `Manifest.signals`);
+- path matching is a **receiver-local** behaviour, and an attacker can register any pattern;
+- "only those who know the path can receive it" therefore **does not hold** — under the broadcast model, knowing the path does not affect **whether** you receive, only **whether** you process it. The only thing that truly decides "whether you receive" is the sender-side `sub` filter.
 
-辅助手段（**可以**采用，但**不得**当作唯一防线）：
+Auxiliary measures (**MAY** be adopted, but **MUST NOT** be treated as the sole line of defence):
 
-- 内容级加密：`payload` 用对端公钥加密，使无密钥的对端即使收到也读不出；
-- 分域发布：把敏感数据发到**独立的传输/网络**（如单独的 UDS 监听、单独的 TLS 通道），让不可信对端在传输层就够不着。
+- content-level encryption: encrypt `payload` with the peer's public key, so that a peer without the key cannot read it even if it receives it;
+- publish into separate domains: send sensitive data over an **isolated transport/network** (a separate UDS listener, a separate TLS channel), so that untrusted peers cannot reach it at the transport layer at all.
 
-### 8.5 本机自组网的现实
+### 8.5 The reality of local self-organising networking
 
-在默认部署形态（localhost 自组网、同一 OS 用户）下，[security.md](../security.md#23-本机自组网为什么不做认证) 的结论适用：所有节点权限集合相等，广播可见性**不构成**额外风险——能够连上来的进程本来就能读到同样的东西。
+Under the default deployment shape (a localhost self-organising network, the same OS user), the conclusion of [security.md](../security.md#23-local-self-organising-network-why-there-is-no-authentication) applies: all nodes have equal permission sets, and broadcast visibility **does not constitute** additional risk — a process that can connect already reads the same things.
 
-**必须**明确的反面条件：一旦把监听扩展到 `0.0.0.0` 或跨机，上述前提**立即失效**，此时**必须**同时具备 TLS + 节点认证 + `sub` 授权（见 [security.md §2.4](../security.md#24-跨机安全随传输走)）。
+The contrary condition **MUST** be stated explicitly: once the listener is extended to `0.0.0.0` or across machines, that premise **lapses immediately**, and TLS + node authentication + `sub` authorization **MUST** then all be in place (see [security.md §2.4](../security.md#24-cross-machine-security-follows-the-transport)).
 
 ---
 
-## 9. 规范条文汇总（MUST/SHOULD 清单）
+## 9. Summary of normative provisions (MUST/SHOULD list)
 
-| # | 条文 | 级别 |
+| # | Provision | Level |
 |---|---|---|
-| P1 | `publish` 构造的 `type` **必须**是 `"signal"`，`target` / `pattern` / `reqid` **必须**为 `null` | **必须** |
-| P2 | 路径**必须**放在 `Signal.path`，**不得**放进 `payload` | **不得** |
-| P3 | 扇出**必须**遍历全部已连对端；发送失败**不得**中断循环 | **必须** |
-| P4 | `publish()` **不得**返回送达确认；广播是尽力而为 | **不得** |
-| P5 | `on(path=None)` **必须**匹配全部路径 | **必须** |
-| P6 | 命中的每个回调**必须**被调用；回调异常**必须**被捕获且不影响其它回调 | **必须** |
-| P7 | 回调**必须**在读循环线程上调用；**不得**在其中长耗时阻塞 | **不得** |
-| P8 | 回调注册**必须**可重入（运行期可注册）；**不得**去重 | **必须** |
-| P9 | 路径**必须**遵循域优先 `<域>.<实体>.<动作>` | **必须** |
-| P10 | 路径**不得**包含点号以外的分隔符，**不得**与 Pattern ID 混用斜杠 | **不得** |
-| P11 | 通配符**必须**只出现在模式末尾；中间的 `*` 是字面量且**必须**返回 `False` | **必须** |
-| P12 | 匹配算法**必须**按 §4.1 的四分支顺序执行 | **必须** |
-| P13 | `.**` **必须**匹配前缀自身；`.*` **必须**恰好匹配一段、**不得**匹配前缀自身 | **必须** |
-| P14 | 裸 `*` / 裸 `**` / 中间含 `*` 的模式**必须**按算法返回 `False`，**不得**当作「匹配一切」 | **不得** |
-| P15 | 匹配**必须**大小写敏感 | **必须** |
-| P16 | 工具名 / Pattern ID / `node_id` **不得**使用通配符匹配 | **不得** |
-| P17 | 信号源产出的非 `dict` 值**必须**被跳过 | **必须** |
-| P18 | 信号源异常**必须**被隔离，**不得**影响其它信号源 | **必须** |
-| P19 | 节点停止后**不得**继续发布 | **不得** |
-| P20 | 破坏性路径变更**必须**用并行新路径（`x.changed` / `x.changed.v2`），**不得**原地改语义 | **不得** |
-| P21 | 广播**不得**回环到发布方自身 | **不得** |
-| P22 | `sub` 授权**必须**在发送侧扇出循环执行；未实现时**必须**在文档中声明广播的全发性质 | **必须** |
-| P23 | 接收方**必须**把 `payload` 当不可信输入；协议层**不**校验其结构 | **必须** |
+| P1 | the `type` constructed by `publish` **MUST** be `"signal"`, and `target` / `pattern` / `reqid` **MUST** be `null` | **MUST** |
+| P2 | the path **MUST** go in `Signal.path` and **MUST NOT** go into `payload` | **MUST NOT** |
+| P3 | fan-out **MUST** iterate over every connected peer; a send failure **MUST NOT** interrupt the loop | **MUST** |
+| P4 | `publish()` **MUST NOT** return delivery confirmation; a broadcast is best-effort | **MUST NOT** |
+| P5 | `on(path=None)` **MUST** match all paths | **MUST** |
+| P6 | every matching callback **MUST** be called; callback exceptions **MUST** be caught and **MUST NOT** affect other callbacks | **MUST** |
+| P7 | callbacks **MUST** be invoked on the read-loop thread; they **MUST NOT** block there for long | **MUST NOT** |
+| P8 | callback registration **MUST** be re-entrant (registration during runtime is possible); **MUST NOT** deduplicate | **MUST** |
+| P9 | paths **MUST** follow domain-first `<domain>.<entity>.<action>` | **MUST** |
+| P10 | a path **MUST NOT** contain separators other than the dot, and **MUST NOT** mix in the slash of Pattern IDs | **MUST NOT** |
+| P11 | wildcards **MUST** appear only at the end of a pattern; a `*` in the middle is a literal and **MUST** return `False` | **MUST** |
+| P12 | the matching algorithm **MUST** execute in the four-branch order of §4.1 | **MUST** |
+| P13 | `.**` **MUST** match the prefix itself; `.*` **MUST** match exactly one segment and **MUST NOT** match the prefix itself | **MUST** |
+| P14 | bare `*` / bare `**` / patterns with `*` in the middle **MUST** return `False` per the algorithm and **MUST NOT** be treated as "match everything" | **MUST NOT** |
+| P15 | matching **MUST** be case-sensitive | **MUST** |
+| P16 | tool names / Pattern IDs / `node_id` **MUST NOT** use wildcard matching | **MUST NOT** |
+| P17 | values produced by a signal source that are not `dict` **MUST** be skipped | **MUST** |
+| P18 | signal-source exceptions **MUST** be isolated and **MUST NOT** affect other signal sources | **MUST** |
+| P19 | publishing **MUST NOT** continue after the node has stopped | **MUST NOT** |
+| P20 | breaking path changes **MUST** use a new parallel path (`x.changed` / `x.changed.v2`) and **MUST NOT** change semantics in place | **MUST NOT** |
+| P21 | a broadcast **MUST NOT** loop back to the publisher itself | **MUST NOT** |
+| P22 | `sub` authorization **MUST** run in the sender-side fan-out loop; while it is unimplemented, the send-to-all nature of broadcasts **MUST** be declared in the documentation | **MUST** |
+| P23 | receivers **MUST** treat `payload` as untrusted input; the protocol layer does **not** validate its structure | **MUST** |
 
 ---
 
-## 10. 已知缺口
+## 10. Known gaps
 
-| # | 缺口 | 影响 | 依据 |
+| # | Gap | Impact | Basis |
 |---|---|---|---|
-| G1 | **没有注销 API**。`handlers` 只增不减，没有 `off()` / `unsubscribe()` | 动态订阅的生命周期只能靠「回调内部自行置标志位」模拟；长期运行且频繁注册的进程会持续增长 | `MSPProtocol.on` 只有注册路径；`handlers` 无移除点 |
-| G2 | **无优先级的顺序依赖**。回调按注册顺序遍历，且无「停止传播」机制 | 实现**不得**依赖顺序；一个回调无法阻止后续回调运行 | `_on_signal` 的 `for path_filter, func in handlers` |
-| G3 | **`pattern_matches` 无输入校验**。空模式、裸通配符、中间通配符都静默返回 `False` | 订阅写错时没有任何反馈——表现为「一条都收不到」 | `matcher.py` 第 36 行的兜底 `return False` |
-| G4 | **无来源过滤**。`on()` 只有路径维度，没有 `sig.source` 维度 | 无法「只听 node_a 的 notify.**」；节点通配是 [DESIGN.md](/design) 记录的下一步 | `handlers` 的元素是 `(path, callback)` 二元组 |
-| G5 | **无入站限速** | 恶意对端可以洪泛广播耗尽接收方 CPU / 日志 | `_on_signal` 逐条即时处理，无令牌桶 |
-| G6 | ~~**`sub` 授权未实现**~~ ✅ 已实现 | 未授权的对端不再收到广播（发送侧逐对端过滤） | `publish()` 的扇出循环逐对端调 `grant_sub()`（`src/msp/protocol/protocol.py`）；本机对端按设计整表绕过（[security.md §3.5](../security.md#35-默认值与作用域)）。残留：`pub` / `sub` 没有「单模式全量放行」的写法（[security.md §9](../security.md#9-已知缺口) 第 5 条） |
-| G7 | **发布无确认、无重传** | 对端掉线期间的信号永久丢失；晚连接者拿不到历史 | `publish()` 返回 `None` |
-| G8 | **无本地回环** | 与 MQTT 语义不同，跨实现互操作时容易踩坑 | `publish()` 只遍历 `connections` |
-| G9 | **`payload` 无 schema 校验** | `declare_signal(schema=...)` 只用于宣告，与 `node.tool` 的 `inputSchema` 同一缺口 | `declare_signal` 文档字符串明示「发布时不做校验」 |
-| G10 | **节点层 `on()` 不支持 `callback=` 关键字** | `node.on(path="x", callback=cb)` 会失败；只能装饰器或直接用 `node.protocol.on(...)` | `MSPNode.on(path=None)` 只接收一个参数 |
-| G11 | **`pattern_matches` 对 `pattern == path` 的逐字分支** | 若路径本身含 `*`（违反命名规范），含通配符的模式可能逐字命中，产生非预期匹配 | `matcher.py` 第 22–23 行 |
+| G1 | **no deregistration API**. `handlers` only grows, never shrinks; there is no `off()` / `unsubscribe()` | the lifecycle of dynamic subscriptions can only be simulated by "setting a flag inside the callback itself"; long-running processes that register frequently keep growing | `MSPProtocol.on` has only a registration path; `handlers` has no removal point |
+| G2 | **order dependence without priority**. callbacks are iterated in registration order, and there is no "stop propagation" mechanism | implementations **MUST NOT** rely on order; one callback cannot stop later callbacks from running | `for path_filter, func in handlers` in `_on_signal` |
+| G3 | **`pattern_matches` validates no input**. empty patterns, bare wildcards, and mid-string wildcards all silently return `False` | a mistyped subscription gives no feedback at all — it shows up as "receiving nothing" | the fallback `return False` on line 36 of `matcher.py` |
+| G4 | **no source filtering**. `on()` has only the path dimension, not the `sig.source` dimension | there is no way to "listen only to node_a's notify.**"; node wildcards are the next step recorded in [DESIGN.md](/design) | the elements of `handlers` are `(path, callback)` pairs |
+| G5 | **no inbound rate limiting** | a malicious peer can flood broadcasts to exhaust the receiver's CPU / logs | `_on_signal` processes each message immediately, with no token bucket |
+| G6 | ~~**`sub` authorization unimplemented**~~ ✅ implemented | unauthorised peers no longer receive broadcasts (per-peer filtering on the sender side) | the fan-out loop of `publish()` calls `grant_sub()` per peer (`src/msp/protocol/protocol.py`); local peers bypass the whole table by design ([security.md §3.5](../security.md#35-defaults-and-scope)). Residual: `pub` / `sub` have no "allow everything for one pattern" form ([security.md §9](../security.md#9-known-gaps) item 5) |
+| G7 | **publishing has no confirmation and no retransmission** | signals emitted while a peer is offline are lost for good; late joiners get no history | `publish()` returns `None` |
+| G8 | **no local loopback** | differs from MQTT semantics, which is easy to trip over in cross-implementation interop | `publish()` iterates only over `connections` |
+| G9 | **no schema validation for `payload`** | `declare_signal(schema=...)` is used only for announcing, the same gap as the `inputSchema` of `node.tool` | the `declare_signal` docstring states explicitly that "no validation is done at publish time" |
+| G10 | **`on()` at the node layer does not support the `callback=` keyword** | `node.on(path="x", callback=cb)` fails; you can only use the decorator or call `node.protocol.on(...)` directly | `MSPNode.on(path=None)` takes a single parameter |
+| G11 | **the literal `pattern == path` branch of `pattern_matches`** | if a path itself contains `*` (violating the naming specification), a pattern containing wildcards may match literally, producing an unexpected match | lines 22–23 of `matcher.py` |
 
 ---
 
-## 11. 参考实现映射
+## 11. Reference implementation map
 
-| 条文 | 源码文件与符号 |
+| Provision | Source files and symbols |
 |---|---|
-| §2.1 报文形态 | `src/msp/protocol/protocol.py` → `MSPProtocol.publish` |
-| §2.2 扇出与失败处理 | `src/msp/protocol/protocol.py` → `MSPProtocol.publish`、`_handle_disconnect` |
-| §2.3 接收方过滤 | `src/msp/protocol/protocol.py` → `_dispatch`、`_dispatch_core`、`_on_signal` |
-| §2.4 注册 API | `src/msp/protocol/protocol.py` → `MSPProtocol.on`；`src/msp/core/node.py` → `MSPNode.on` |
-| §2.5 自动重复发布 | `src/msp/core/node.py` → `MSPNode.signal_source`、`signal`、`_run_signal_source`、`start` |
-| §3.2 域优先约定 | `docs/DESIGN.md`「Signal path 的分层约定：域优先」；`src/msp/core/node.py` → `declare_signal`（路径只声明不校验） |
-| §3.5 路径声明 | `src/msp/core/manifest.py` → `Manifest.add_signal`、`SignalDescriptor` |
-| §4.1–4.3 匹配算法 | `src/msp/protocol/matcher.py` → `pattern_matches` |
-| §4.4 两个易错点 | `src/msp/protocol/matcher.py` 模块文档字符串与第 22–36 行 |
-| §4.5 匹配作用域 | `src/msp/protocol/protocol.py` → `_tools`、`patterns`、`connections`（均为字典精确查表） |
-| §5.3 没有总线的总线 | `docs/DESIGN.md`「应用场景：虚拟总线」 |
-| §5.4 版本化路径 | 依赖 `pattern_matches` 的前缀分支（`matcher.py` 第 25–34 行） |
-| §5.5 无本地回环 | `src/msp/protocol/protocol.py` → `MSPProtocol.publish`（只遍历 `connections`） |
-| §6.2 注册项结构 | `src/msp/protocol/protocol.py` → `MSPProtocol.handlers` 的类型注解 |
-| §6.3 无订阅表 | `src/msp/protocol/matcher.py` 文档字符串「原来的 `PathMatcher` 容器已随之删除」 |
-| §8.2 `sub` 授权 | `src/msp/protocol/protocol.py` → `MSPProtocol.grant_sub`（扇出循环的调用点）与 `MSPProtocol.publish`；授权表见 `src/msp/core/grants.py` |
-| §10 G1 无注销 | `src/msp/protocol/protocol.py` → `MSPProtocol.on`（只有注册路径） |
-| §10 G4 无来源过滤 | `docs/DESIGN.md`「未来扩展：节点通配（二维匹配）」 |
+| §2.1 message shape | `src/msp/protocol/protocol.py` → `MSPProtocol.publish` |
+| §2.2 fan-out and failure handling | `src/msp/protocol/protocol.py` → `MSPProtocol.publish`, `_handle_disconnect` |
+| §2.3 receiver-side filtering | `src/msp/protocol/protocol.py` → `_dispatch`, `_dispatch_core`, `_on_signal` |
+| §2.4 registration API | `src/msp/protocol/protocol.py` → `MSPProtocol.on`; `src/msp/core/node.py` → `MSPNode.on` |
+| §2.5 automatic repeated publishing | `src/msp/core/node.py` → `MSPNode.signal_source`, `signal`, `_run_signal_source`, `start` |
+| §3.2 domain-first convention | `docs/DESIGN.md` "Signal path layering: domain first"; `src/msp/core/node.py` → `declare_signal` (the path is only declared, not validated) |
+| §3.5 path declaration | `src/msp/core/manifest.py` → `Manifest.add_signal`, `SignalDescriptor` |
+| §4.1–4.3 matching algorithm | `src/msp/protocol/matcher.py` → `pattern_matches` |
+| §4.4 the two pitfalls | the module docstring of `src/msp/protocol/matcher.py` and lines 22–36 |
+| §4.5 scope of matching | `src/msp/protocol/protocol.py` → `_tools`, `patterns`, `connections` (all exact dictionary lookups) |
+| §5.3 the bus without a bus | `docs/DESIGN.md` "Use case: a virtual bus" |
+| §5.4 versioned paths | relies on the prefix branches of `pattern_matches` (lines 25–34 of `matcher.py`) |
+| §5.5 no local loopback | `src/msp/protocol/protocol.py` → `MSPProtocol.publish` (iterates only over `connections`) |
+| §6.2 structure of a registration entry | the type annotation of `src/msp/protocol/protocol.py` → `MSPProtocol.handlers` |
+| §6.3 no subscription table | the docstring of `src/msp/protocol/matcher.py`: "the original `PathMatcher` container was deleted along with it" |
+| §8.2 `sub` authorization | `src/msp/protocol/protocol.py` → `MSPProtocol.grant_sub` (the call site in the fan-out loop) and `MSPProtocol.publish`; the authorization table is in `src/msp/core/grants.py` |
+| §10 G1 no deregistration | `src/msp/protocol/protocol.py` → `MSPProtocol.on` (only a registration path) |
+| §10 G4 no source filtering | `docs/DESIGN.md` "Future extension: node wildcards (two-dimensional matching)" |

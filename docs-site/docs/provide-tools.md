@@ -1,77 +1,77 @@
-# 提供能力：把工具和信号暴露出去
+# Providing capabilities: exposing tools and signals
 
-## 注册工具
+## Registering tools
 
 ```python
-@node.tool("get_weather", "查询城市天气")
+@node.tool("get_weather", "Look up the weather")
 def get_weather(location: str, days: int = 3) -> dict:
     return {"location": location, "days": days, "temp_c": 21}
 ```
 
-三样东西会被写进能力清单，邻居握手时就能看到：名字、描述、输入 schema。
+Three things are written into the manifest, and a neighbour sees them at handshake time: the name, the description, the input schema.
 
-### schema 从哪来
+### Where the schema comes from
 
-默认从函数签名的类型注解生成：
+By default it is generated from the type annotations in the function signature:
 
 ```python
 from typing import Annotated
 
-@node.tool("search", "在本地文件里搜索")
+@node.tool("search", "Search local files")
 def search(
-    pattern: Annotated[str, "正则表达式"],
-    path: Annotated[str, "搜索根目录"] = ".",
-    limit: Annotated[int, "最多返回条数"] = 50,
+    pattern: Annotated[str, "regular expression"],
+    path: Annotated[str, "search root directory"] = ".",
+    limit: Annotated[int, "maximum number of results"] = 50,
 ) -> dict:
     ...
 ```
 
-想完全自己控制就显式传：
+For full control, pass it explicitly:
 
 ```python
-node.tool("raw", "手工描述", input_schema={"type": "object", "properties": {...}})
+node.tool("raw", "hand-written description", input_schema={"type": "object", "properties": {...}})
 ```
 
-**schema 只用于对外宣告，不做运行时校验**——别指望它挡住非法参数，工具函数自己要防御。
+**The schema is for announcing capabilities only; it does not validate at runtime** — do not expect it to stop invalid arguments. The tool function has to defend itself.
 
-### 返回值怎么变成结果
+### How the return value becomes a result
 
-工具函数返回的 dict 进 `ToolResult.structured`。想返回富内容（文本/图片块）就返回 MCP 风格的内容块，
-见 [`src/msp/mcp/`](https://github.com/hxh230802/MSP/tree/master/src/msp/mcp/)。
+The dict returned by a tool function goes into `ToolResult.structured`. To return rich content (text or image blocks), return MCP-style content blocks;
+see [`src/msp/mcp/`](https://github.com/hxh230802/MSP/tree/master/src/msp/mcp/).
 
-## 发布信号
+## Publishing signals
 
-两步：**声明**会发布哪条路径，然后**发布**。
+Two steps: **declare** which path you will publish, then **publish**.
 
 ```python
-node.declare_signal("weather.updated", description="天气数据更新")
+node.declare_signal("weather.updated", description="weather data updated")
 
-node.publish("weather.updated", {"location": "杭州", "temp_c": 21})
+node.publish("weather.updated", {"location": "Hangzhou", "temp_c": 21})
 ```
 
-`publish` 是发完即忘的：不等待、没有回执、没人订阅也不报错。
+`publish` is fire-and-forget: it does not wait, there is no receipt, and no error is raised if nobody is subscribed.
 
-### 把外部事件源接进来
+### Wiring in external event sources
 
-有个后台线程/监听器不断产生事件时，用 `signal_source` 装饰一个**无参生成器**，节点启动后会自动迭代并发布：
+When a background thread or listener keeps producing events, decorate a **zero-argument generator** with `signal_source`. Once the node starts, it iterates the generator and publishes automatically:
 
 ```python
 @node.signal_source("system.file.modified")
 def watch():
-    for event in watch_downloads_folder():     # 你自己的阻塞迭代器
+    for event in watch_downloads_folder():     # your own blocking iterator
         yield {"path": str(event.path), "size": event.size}
 ```
 
-注意这个函数**必须是生成器**（里面要有 `yield`），而且**不能带参数**——`@node.signal` 是它的别名。
+Note that this function **MUST be a generator** (it needs a `yield` inside) and it **cannot take arguments** — `@node.signal` is an alias for it.
 
-### 声明的意义
+### Why declaring matters
 
-`declare_signal` 会把路径写进 manifest，邻居才知道"这个节点会发这类信号"，也才谈得上按路径授权
-（`sub` 授权是按**路径模式**匹配的，不是按内容）。不声明也能发，但没人知道该期待它。
+`declare_signal` writes the path into the manifest. That is how neighbours learn "this node publishes this kind of signal", and it is what makes path-based authorization possible at all
+(`sub` authorization matches **path patterns**, not content). You can publish without declaring, but then nobody knows to expect it.
 
-## 批量改清单：`defer_manifest`
+## Batched manifest updates: `defer_manifest`
 
-一次注册十几个工具时，逐个推清单很浪费。用上下文管理器攒成一次：
+When registering a dozen tools at once, pushing the manifest once per tool is wasteful. Use the context manager to collect them into a single push:
 
 ```python
 with node.defer_manifest():
@@ -79,20 +79,20 @@ with node.defer_manifest():
         node.tool(name, "")(fn)
 ```
 
-它只影响清单推送，不是通用并发原语。
+It only affects manifest pushes. It is not a general-purpose concurrency primitive.
 
-## 长任务：任务模式
+## Long-running work: the task pattern
 
-`get_task` / `list_tasks` 这种"有队列、要回查"的能力，用 `msp/task` 模式比裸工具更省事——
-调用方拿到的是一份可回查的任务快照。见 [`src/msp/patterns/task.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py)
-与 [`docs/DESIGN.md`](https://github.com/hxh230802/MSP/blob/master/docs/DESIGN.md) 里"任务"一节。
+Capabilities like `get_task` / `list_tasks` — ones backed by a queue that need a follow-up query — are less work with the `msp/task` pattern than as bare tools:
+the caller receives a task snapshot it can query again. See [`src/msp/patterns/task.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py)
+and the "Tasks" section of [`docs/DESIGN.md`](https://github.com/hxh230802/MSP/blob/master/docs/DESIGN.md).
 
-## 检查自己宣告了什么
+## Checking what you have announced
 
 ```python
 node.start()
-print(node.exposed_bindings())     # 本节点对外暴露的工具与信号
-print(node.metrics_line())         # 连接 / 信号 / 工具各维度的计数
+print(node.exposed_bindings())     # tools and signals this node exposes
+print(node.metrics_line())         # counts for connections / signals / tools
 ```
 
-`metrics_line()` 是排查"对方到底有没有发过来"的第一手证据。
+`metrics_line()` is your first-hand evidence when you need to find out whether the other side actually sent anything.

@@ -1,273 +1,273 @@
-# `msp/multi-round` — 执行中追问
+# `msp/multi-round` — Follow-ups during execution
 
 | | |
 |---|---|
-| **协议修订** | `2026-10-10` |
-| **模式 ID** | `msp/multi-round` |
-| **状态标记** | ✅ **已实现**（主路径可验证）；§9 列出的边界为 🟡 **部分实现** |
-| **降级目标** | `msp/request-reply`（`fallback_to`） |
-| **规范性用语** | RFC 2119，见[规范索引](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#2-规范性用语) |
-| **本页定义** | 被调方在一次 `tool_call` 的**同一个 `reqid` 内**多次向调用方索取补充信息，再给出最终结果 |
+| **Protocol revision** | `2026-10-10` |
+| **Pattern ID** | `msp/multi-round` |
+| **Status markers** | ✅ **Implemented** (main path verifiable); the boundaries listed in §9 are 🟡 **partially implemented** |
+| **Fallback target** | `msp/request-reply` (`fallback_to`) |
+| **Normative language** | RFC 2119, see [specification index](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#2-规范性用语) |
+| **Defined by this page** | The callee asks the caller for supplementary information several times **within the same `reqid`** of one `tool_call`, and only then returns the final result |
 
-## 1. 概述
+## 1. Overview
 
-### 1.1 解决的工程问题
+### 1.1 The engineering problem it solves
 
-工具参数经常要等到**执行中**才能确定：订票工具直到要下单才发现缺出发日期，检索工具直到拼查询语句才发现缺时间范围。若没有本模式，双方只有两种笨办法：
+Tool arguments often become known only **during execution**: a booking tool discovers the departure date is missing only when it is about to place the order, and a search tool discovers the time range is missing only when it assembles the query string. Without this pattern both sides have only two clumsy options:
 
-1. 工具失败一次，把「缺少什么」编码进 `tool_result.payload.error`，调用方解析后再调一次——一次交互被拆成两次，服务端要重建上下文，`reqid` 变了，`ctx` 里的中间状态全丢。
-2. 工具干脆把参数一次要全，逼调用方把所有细节塞进 `args`，哪怕其中一半用不上。
+1. The tool fails once and encodes "what is missing" into `tool_result.payload.error`; the caller parses it and calls again — one interaction is split into two, the server has to rebuild its context, the `reqid` changes, and all intermediate state in `ctx` is lost.
+2. The tool simply demands every argument up front, forcing the caller to stuff all details into `args`, even though half of them go unused.
 
-`msp/multi-round` 给第三种选择：**在同一次调用的 `reqid` 内就地补齐**。工具函数在独立线程里执行到一半，调用 `ctx.ask(...)` 阻塞等待；调用方收到追问、作答、回传；工具带着答案继续跑。被调方的执行栈、局部变量、已发出的中间副作用都还在原地。
+`msp/multi-round` offers a third choice: **fill the gaps in place within the `reqid` of the same call**. A tool function is halfway through executing on its own thread when it calls `ctx.ask(...)` and blocks; the caller receives the follow-up, answers it and sends it back; the tool continues with the answer. The callee's execution stack, local variables and already-emitted intermediate side effects all stay where they were.
 
-### 1.2 与现有模式的关系
+### 1.2 Relation to existing patterns
 
-- 本模式是 `msp/request-reply` 的**超集**：起手报文仍是 `tool_call`，收尾报文仍是 `tool_result`，关联键仍是 `reqid`。区别只在于往返过程中**被调方可以反向插话**。
-- 「多轮」不等于「有人参与」。作答方是调用方提供的 `input_fn`；它可以查本地配置、走默认值、按规则推导、读本地模型——**可以**完全没有人在回路里。
-- 本模式只新增**两个**模式私有信号类型（`input_required` / `input_response`），核心 `SignalType` 零改动。协议层为此付出的代价，只有[模式路由](../patterns.md#3-路由契约)里的一条查表。
+- This pattern is a **superset** of `msp/request-reply`: the opening message is still `tool_call`, the closing message is still `tool_result`, and the correlation key is still `reqid`. The only difference is that **the callee MAY interject in the reverse direction** during the round trip.
+- "Multi-round" does not mean "a human is involved". The answering party is the `input_fn` supplied by the caller; it can consult local configuration, take defaults, derive by rule, or read a local model — there **MAY** be no human in the loop at all.
+- This pattern adds only **two** pattern-private signal types (`input_required` / `input_response`); the core `SignalType` is unchanged. The only cost the protocol layer pays for this is one table lookup in [pattern routing](../patterns.md#3-routing-contract).
 
-## 2. 契约
+## 2. Contract
 
-### 2.1 模式标识与降级
+### 2.1 Pattern identity and fallback
 
-| 项 | 值 | 源码位置 |
+| Item | Value | Source location |
 |---|---|---|
 | `pattern_id` | `"msp/multi-round"` | `MultiRoundHandler.pattern_id` |
 | `fallback_to` | `"msp/request-reply"` | `MultiRoundHandler.fallback_to` |
-| `conflicts_with` | `[]`（继承 `PatternHandler` 默认值，本模式未声明） | `PatternHandler.conflicts_with` |
+| `conflicts_with` | `[]` (inherited from the `PatternHandler` default; not declared by this pattern) | `PatternHandler.conflicts_with` |
 
-**降级语义**：`fallback_to` 声明的意图是——当对端不支持本模式时，改用 `msp/request-reply` 重发（退化为一次普通工具调用，追问能力消失）。**当前参考实现不发生自动降级**：`fallback_to` 在全仓库只被声明、没有任何代码读取。但 `call_multiround()` 现在会**先建连再检查** `peer(peer_id).supports("msp/multi-round")`，对端未宣告本模式时立即抛 `RuntimeError`（不再发出去后靠总超时兜底，见 §12 G2）——**检查**已实现，**降级**仍未实现。
+**Fallback semantics**: the intent declared by `fallback_to` is that, when the peer does not support this pattern, the request is resent using `msp/request-reply` (degrading to an ordinary tool call, with the follow-up capability gone). **No automatic fallback happens in the current reference implementation**: `fallback_to` is only declared across the whole repository and no code reads it. However, `call_multiround()` now **establishes the connection before checking** `peer(peer_id).supports("msp/multi-round")`, and raises `RuntimeError` immediately when the peer has not announced this pattern (it no longer sends the request out and relies on the overall timeout as a backstop; see §12 G2) — **the check** is implemented, **the fallback** is not.
 
-实现者**可以**实现自动降级，但一旦实现**必须**满足：降级前**不得**发出任何 `input_required`；降级后本次交互的报文形态**必须**完全符合 [`msp/request-reply`](./request-reply.md)（不得带 `pattern` 字段）；降级**应当**通过调用方显式可见的方式告知（如返回值或异常），而**不得**静默改变语义。
+An implementer **MAY** implement automatic fallback, but once implemented it **MUST** satisfy: no `input_required` **MUST** be sent before the fallback; after the fallback the message shapes of this interaction **MUST** conform exactly to [`msp/request-reply`](./request-reply.md) (they **MUST NOT** carry a `pattern` field); the fallback **SHOULD** be signalled in a way the caller can explicitly see (such as a return value or an exception) and **MUST NOT** change semantics silently.
 
-> 事实澄清：当对端没有注册本模式 handler 时，带 `pattern` 的 `tool_call` 会落到协议层的默认分支（[`_dispatch`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) 第 3 步），被核心工具注册表当作普通工具调用处理。这不是规范意义上的降级，而是**无模式路由的兜底**：同名工具若只在模式自带注册表里注册过，核心表查不到，会回一个 `error` 为「未知工具: X」的 `tool_result`。见 §6.1。
+> Factual clarification: when the peer has not registered a handler for this pattern, a `tool_call` carrying `pattern` falls into the protocol layer's default branch ([`_dispatch`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) step 3) and is handled by the core tool registry as an ordinary tool call. This is not fallback in the normative sense but a **backstop for unrouted patterns**: if a tool of the same name is registered only in the pattern's own registry, the core registry cannot find it and returns a `tool_result` whose `error` is "unknown tool: X". See §6.1.
 
-### 2.2 信号类型
+### 2.2 Signal types
 
-| 信号 `type` | 方向 | 有 `reqid` | 语义 |
+| Signal `type` | Direction | Has `reqid` | Semantics |
 |---|---|---|---|
-| `tool_call` | 调用方 → 被调方 | **是** | 起手请求；与核心同名类型共用，靠 `pattern` 区分 |
-| `input_required` | 被调方 → 调用方 | **是** | 追问；`reqid` 与起手 `tool_call` **必须**相同 |
-| `input_response` | 调用方 → 被调方 | **是** | 应答；`reqid` **必须**与追问相同 |
-| `tool_result` | 被调方 → 调用方 | **是** | 终止结果；`reqid` **必须**与起手相同 |
+| `tool_call` | caller → callee | **Yes** | opening request; shared with the core type of the same name, distinguished by `pattern` |
+| `input_required` | callee → caller | **Yes** | follow-up question; `reqid` **MUST** be the same as that of the opening `tool_call` |
+| `input_response` | caller → callee | **Yes** | answer; `reqid` **MUST** be the same as that of the follow-up question |
+| `tool_result` | callee → caller | **Yes** | terminal result; `reqid` **MUST** be the same as that of the opening request |
 
-`input_required` / `input_response` 是本模式私有的 `type` 值。所有本模式信号**必须**携带 `pattern = "msp/multi-round"`——它是协议层的路由键（见 §6.1 与 [模式层契约](../patterns.md#3-路由契约)）。
+`input_required` / `input_response` are `type` values private to this pattern. Every signal of this pattern **MUST** carry `pattern = "msp/multi-round"` — it is the routing key at the protocol layer (see §6.1 and [pattern-layer contract](../patterns.md#3-routing-contract)).
 
-### 2.3 线程与阻塞模型
+### 2.3 Threading and blocking model
 
-| 侧 | 约束 | 理由 |
+| Side | Constraint | Rationale |
 |---|---|---|
-| 被调方 | **必须**在独立线程中执行工具函数 | 工具的 `ctx.ask()` 是阻塞调用；若在执行读循环的线程里跑，调用方回传的 `input_response` 永远读不到，必死锁 |
-| 被调方 | **可以**在一次工具执行中多次调用 `ctx.ask()` | 每次调用生成一对 `reqid` 相同的新追问/应答 |
-| 调用方 | 收到 `input_required` 时**应当**在收到它的线程之外完成阻塞式询问 | 参考实现在读循环线程内同步调用 `input_fn`；见 §9 |
-| 两侧 | **不得**假定追问次数有上界 | 协议不设次数上限；调用方用总超时兜底 |
+| callee | **MUST** execute the tool function on a separate thread | the tool's `ctx.ask()` is a blocking call; if it ran on the thread executing the read loop, the `input_response` sent back by the caller would never be read and deadlock is certain |
+| callee | **MAY** call `ctx.ask()` several times within one tool execution | each call produces a new pair of follow-up and answer with the same `reqid` |
+| caller | on receiving `input_required`, **SHOULD** complete the blocking question outside the thread that received it | the reference implementation calls `input_fn` synchronously inside the read-loop thread; see §9 |
+| both sides | **MUST NOT** assume any upper bound on the number of follow-ups | the specification sets no limit on the count; the caller uses the overall timeout as a backstop |
 
-`ctx.ask(prompt, timeout=30.0)`：`prompt`（`str`，必填）原样进入 `input_required.payload.prompt`；`timeout`（`float`，默认 `30.0`）是单次追问的等待上界；返回 `input_response.payload.answer` 的原值；超时抛 `TimeoutError`（文案 `"等待客户端补充信息超时"`）。调用方的总超时由 `call_multiround(..., timeout=60.0)` 独立控制，与单次追问超时**不是**同一个值，**不得**互相推导。
+`ctx.ask(prompt, timeout=30.0)`: `prompt` (`str`, required) goes verbatim into `input_required.payload.prompt`; `timeout` (`float`, default `30.0`) is the upper bound on waiting for a single follow-up; it returns the raw value of `input_response.payload.answer`; on timeout it raises `TimeoutError` (message `"timed out waiting for client input"`). The caller's overall timeout is controlled independently by `call_multiround(..., timeout=60.0)`; it is **not** the same value as the single follow-up timeout, and the two **MUST NOT** be derived from each other.
 
-## 3. 报文（逐信号）
+## 3. Messages (signal by signal)
 
-信封字段的通用规则见 [`Signal` 信封](../base-protocol.md#2-signal-信封)。以下示例中，信封为 snake_case（`type` / `source` / `pattern` / `target` / `path` / `reqid` / `payload` / `timestamp`），`payload` 内部字段名逐字取自源码。
+General rules for envelope fields are in [the `Signal` envelope](../base-protocol.md#2-the-signal-envelope). In the examples below the envelope is snake_case (`type` / `source` / `pattern` / `target` / `path` / `reqid` / `payload` / `timestamp`), and the field names inside `payload` are taken verbatim from the source.
 
 ### 3.1 `tool_call`
 
-| 字段 | 位置 | 类型 | 必填 | 值 |
+| Field | Location | Type | Required | Value |
 |---|---|---|---|---|
-| `type` | 信封 | string | **必须** | `"tool_call"` |
-| `pattern` | 信封 | string | **必须** | `"msp/multi-round"` |
-| `source` / `target` | 信封 | string | **必须** | 调用方 / 被调方 `node_id` |
-| `reqid` | 信封 | string | **必须** | 本次交互的关联标识，贯穿全部四类报文 |
-| `payload.tool` | 载荷 | string | **必须** | 工具名 |
-| `payload.args` | 载荷 | object | **必须** | 工具实参；参考实现取不到时用 `{}` |
+| `type` | envelope | string | **MUST** | `"tool_call"` |
+| `pattern` | envelope | string | **MUST** | `"msp/multi-round"` |
+| `source` / `target` | envelope | string | **MUST** | caller / callee `node_id` |
+| `reqid` | envelope | string | **MUST** | correlation identifier of this interaction, carried by all four message types |
+| `payload.tool` | payload | string | **MUST** | tool name |
+| `payload.args` | payload | object | **MUST** | tool arguments; `{}` when the reference implementation cannot obtain them |
 
 ```json
 { "type": "tool_call", "source": "client_node", "pattern": "msp/multi-round", "target": "server_node",
   "path": null, "reqid": "mr-1", "payload": { "tool": "book_flight", "args": { "destination": "Paris" } } }
 ```
 
-`reqid` 的生成方式属实现自由。参考实现按 handler 实例计数生成 `mr-<n>`（`n` 从 1 递增），与核心模式使用 `Signal.new_reqid()`（16 位十六进制随机串）不同。**应当**保证同一节点内并发交互的 `reqid` 互不相同。
+How `reqid` is generated is left to the implementation. The reference implementation generates `mr-<n>` from a per-handler-instance counter (`n` incrementing from 1), unlike the core patterns, which use `Signal.new_reqid()` (a 16-character hexadecimal random string). Concurrent interactions within the same node **SHOULD** have distinct `reqid` values.
 
 ### 3.2 `input_required`
 
-| 字段 | 位置 | 类型 | 必填 | 值 |
+| Field | Location | Type | Required | Value |
 |---|---|---|---|---|
-| `type` | 信封 | string | **必须** | `"input_required"` |
-| `pattern` | 信封 | string | **必须** | `"msp/multi-round"` |
-| `source` / `target` | 信封 | string | **必须** | 被调方 / 调用方 `node_id` |
-| `reqid` | 信封 | string | **必须** | 与起手 `tool_call` 相同 |
-| `payload.prompt` | 载荷 | string | **必须** | 追问文案 |
+| `type` | envelope | string | **MUST** | `"input_required"` |
+| `pattern` | envelope | string | **MUST** | `"msp/multi-round"` |
+| `source` / `target` | envelope | string | **MUST** | callee / caller `node_id` |
+| `reqid` | envelope | string | **MUST** | same as the opening `tool_call` |
+| `payload.prompt` | payload | string | **MUST** | follow-up question text |
 
 ```json
 { "type": "input_required", "source": "server_node", "pattern": "msp/multi-round", "target": "client_node",
-  "path": null, "reqid": "mr-1", "payload": { "prompt": "出发日期？" } }
+  "path": null, "reqid": "mr-1", "payload": { "prompt": "departure date?" } }
 ```
 
-**载荷只有 `prompt` 一个字段。** 参数名、期望类型、取值范围、候选项、上下文片段在参考实现中**均不存在**；接收方**不得**假定存在，发送方若自行扩展**应当**新增字段而**不得**改变 `prompt` 的含义（宽容读取见[base-protocol §2.3](../base-protocol.md#23-宽容读取)）。接收方取不到 `prompt` 时**应当**按空串处理。
+**The payload has exactly one field, `prompt`.** Argument names, expected types, value ranges, candidate options and context fragments **do not exist at all** in the reference implementation; the receiver **MUST NOT** assume they are present, and a sender that extends the payload itself **SHOULD** add new fields and **MUST NOT** change the meaning of `prompt` (for the lenient reading see [base-protocol §2.3](../base-protocol.md#23-lenient-reading)). When the receiver cannot obtain `prompt`, it **SHOULD** treat it as an empty string.
 
 ### 3.3 `input_response`
 
-| 字段 | 位置 | 类型 | 必填 | 值 |
+| Field | Location | Type | Required | Value |
 |---|---|---|---|---|
-| `type` | 信封 | string | **必须** | `"input_response"` |
-| `pattern` | 信封 | string | **必须** | `"msp/multi-round"` |
-| `source` / `target` | 信封 | string | **必须** | 调用方 / 被调方 `node_id` |
-| `reqid` | 信封 | string | **必须** | 与该次 `input_required` 相同 |
-| `payload.answer` | 载荷 | any | **必须** | 应答值，任意 JSON 可序列化类型 |
+| `type` | envelope | string | **MUST** | `"input_response"` |
+| `pattern` | envelope | string | **MUST** | `"msp/multi-round"` |
+| `source` / `target` | envelope | string | **MUST** | caller / callee `node_id` |
+| `reqid` | envelope | string | **MUST** | same as that `input_required` |
+| `payload.answer` | payload | any | **MUST** | answer value, any JSON-serialisable type |
 
 ```json
 { "type": "input_response", "source": "client_node", "pattern": "msp/multi-round", "target": "server_node",
   "path": null, "reqid": "mr-1", "payload": { "answer": "2026-10-15" } }
 ```
 
-`answer` 的类型不受本规范约束：字符串、数字、布尔、对象、数组、`null` 均可，被调方**不得**假定其为标量。参考实现在 `input_fn` 抛异常时把 `answer` 置为 `{"error": "<异常文本>"}`——这是**实现约定而非协议语义**，被调方**不得**把它当作取消或超时的信号。
+The type of `answer` is not constrained by this specification: strings, numbers, booleans, objects, arrays and `null` are all acceptable, and the callee **MUST NOT** assume it is a scalar. When `input_fn` raises, the reference implementation sets `answer` to `{"error": "<exception text>"}` — this is an **implementation convention, not protocol semantics**, and the callee **MUST NOT** treat it as a signal of cancellation or timeout.
 
 ### 3.4 `tool_result`
 
-| 字段 | 位置 | 类型 | 必填 | 值 |
+| Field | Location | Type | Required | Value |
 |---|---|---|---|---|
-| `type` | 信封 | string | **必须** | `"tool_result"` |
-| `pattern` | 信封 | string | **必须** | `"msp/multi-round"` |
-| `reqid` | 信封 | string | **必须** | 与起手 `tool_call` 相同 |
-| `payload.content` | 载荷 | any | **必须** | 工具返回值的**原样值**；返回 falsy 值（`None` / `""` / `0` / `False` / `{}` / `[]`）时归一为 `[]` |
-| `payload.error` | 载荷 | string | **必须** | 成功时为 `""`；失败时为异常文本 |
+| `type` | envelope | string | **MUST** | `"tool_result"` |
+| `pattern` | envelope | string | **MUST** | `"msp/multi-round"` |
+| `reqid` | envelope | string | **MUST** | same as the opening `tool_call` |
+| `payload.content` | payload | any | **MUST** | the **raw value** returned by the tool; falsy values (`None` / `""` / `0` / `False` / `{}` / `[]`) are normalised to `[]` |
+| `payload.error` | payload | string | **MUST** | `""` on success; the exception text on failure |
 
 ```json
 { "type": "tool_result", "source": "server_node", "pattern": "msp/multi-round", "target": "client_node",
   "path": null, "reqid": "mr-1",
-  "payload": { "content": { "destination": "Paris", "date": "2026-10-15", "airline": "国航" }, "error": "" } }
+  "payload": { "content": { "destination": "Paris", "date": "2026-10-15", "airline": "Air China" }, "error": "" } }
 ```
 
-与核心 [`msp/request-reply`](./request-reply.md) 的 `tool_result` 有**三处实质差异**，实现者**必须**按本模式的形态处理：① 本模式**不产出** `structuredContent`，返回值只出现在 `content` 里；② 本模式的 `content` 是工具返回值的**原样值**（可能是对象、字符串、数组；但 falsy 值会被 `content or []` 归一为 `[]`），**不是**规范化后的内容块数组（核心模式会先经 `_normalize_tool_result` 再写入 `content`）；③ 本模式**总是**同时携带 `content` 与 `error`，成功时 `error` 是空串，因此调用方**应当**判断 `error != ""`，而**不得**用字段是否存在来判断成败。
+There are **three substantive differences** from the `tool_result` of the core [`msp/request-reply`](./request-reply.md), and implementers **MUST** handle this pattern's shape: ① this pattern **does not produce** `structuredContent`, and return values appear only in `content`; ② this pattern's `content` is the **raw value** returned by the tool (it may be an object, a string or an array, though falsy values are normalised to `[]` by `content or []`), **not** a normalised array of content blocks (the core pattern passes through `_normalize_tool_result` before writing `content`); ③ this pattern **always** carries both `content` and `error`, with `error` being the empty string on success, so the caller **SHOULD** test `error != ""` and **MUST NOT** decide success or failure by whether a field is present.
 
-## 4. 消息流
+## 4. Message flow
 
-### 4.1 正常路径：两次追问 + 最终结果（同一个 `reqid`）
+### 4.1 Normal path: two follow-ups plus the final result (same `reqid`)
 
 ```text
-   调用方 (client_node)                                    被调方 (server_node)
-        │ ① tool_call  reqid=mr-1  payload={tool:"book_flight",args:{…}}      │
-        ├──────────────────────────────────────────────────────────────────────▶│
-        │                                     读循环只做分发，起独立线程跑工具
-        │                                     工具执行中，发现缺参数
-        │ ② input_required  reqid=mr-1  payload={prompt:"出发日期？"}           │
-        │◀──────────────────────────────────────────────────────────────────────┤
-        │                                     ctx.ask("出发日期？") 阻塞，<=30s
-        │ input_fn("出发日期？") → "2026-10-15"                                 │
-        │ ③ input_response  reqid=mr-1  payload={answer:"2026-10-15"}           │
-        ├──────────────────────────────────────────────────────────────────────▶│
-        │                                     唤醒 ask()，工具继续执行
-        │ ④ input_required  reqid=mr-1  payload={prompt:"偏好航空公司？"}       │
-        │◀──────────────────────────────────────────────────────────────────────┤
-        │                                     ctx.ask("偏好航空公司？") 阻塞
-        │ ⑤ input_response  reqid=mr-1  payload={answer:"国航"}                 │
-        ├──────────────────────────────────────────────────────────────────────▶│
-        │                                     工具返回，工作线程结束
-        │ ⑥ tool_result  reqid=mr-1  payload={content:{…},error:""}             │
-        │◀──────────────────────────────────────────────────────────────────────┤
-        │ 唤醒 call_multiround()，返回 content                                  │
-        ▼                                                                       ▼
+   caller (client_node)                                  callee (server_node)
+        │ ① tool_call  reqid=mr-1  payload={tool:"book_flight",args:{…}}            │
+        ├──────────────────────────────────────────────────────────────────────────▶│
+        │                                      the read loop only dispatches; a separate thread runs the tool
+        │                                      the tool runs and finds an argument missing
+        │ ② input_required  reqid=mr-1  payload={prompt:"departure date?"}          │
+        │◀──────────────────────────────────────────────────────────────────────────┤
+        │                                      ctx.ask("departure date?") blocks, <=30s
+        │ input_fn("departure date?") → "2026-10-15"
+        │ ③ input_response  reqid=mr-1  payload={answer:"2026-10-15"}               │
+        ├──────────────────────────────────────────────────────────────────────────▶│
+        │                                      wakes ask(); the tool keeps running
+        │ ④ input_required  reqid=mr-1  payload={prompt:"preferred airline?"}       │
+        │◀──────────────────────────────────────────────────────────────────────────┤
+        │                                      ctx.ask("preferred airline?") blocks
+        │ ⑤ input_response  reqid=mr-1  payload={answer:"Air China"}                │
+        ├──────────────────────────────────────────────────────────────────────────▶│
+        │                                      the tool returns; the worker thread ends
+        │ ⑥ tool_result  reqid=mr-1  payload={content:{…},error:""}                 │
+        │◀──────────────────────────────────────────────────────────────────────────┤
+        │ wakes call_multiround() and returns content                               │
+        ▼                                                                           ▼
 ```
 
-四个关键不变式：① ②③④⑤⑥ 的信封 `reqid` **必须**恒等于 ①；② 同一 `reqid` 只**必须**产生一个 `tool_result`；③ 追问与被调方的线程数无关，**可以**在同一线程内串行发生多次；④ 调用方无需宣告自己支持本模式，也无需预知追问次数。
+Four key invariants: ① the envelope `reqid` of ②③④⑤⑥ **MUST** equal that of ①; ② the same `reqid` **MUST** produce only one `tool_result`; ③ follow-ups are unrelated to the callee's thread count and **MAY** occur several times in sequence within one thread; ④ the caller need not announce that it supports this pattern, nor know the number of follow-ups in advance.
 
-### 4.2 错误路径对照
+### 4.2 Error path comparison
 
 ```text
-  (a) 追问超时      被调方: ask() 抛 TimeoutError → tool_result{content:[],error:"等待客户端补充信息超时"}
-  (b) 工具异常      被调方: tool_result{content:[],error:"<异常文本>"}
-  (c) 未知工具      被调方: tool_result{content:[],error:"未知工具: <name>"}  ← 立即回，不起线程
-  (d) 调用方总超时  调用方: TimeoutError（丢弃该 reqid 的等待表项）→ 之后到达的 input_required 被静默丢弃
-  (e) 对端无 handler 对端: error{code:-32600,message:"未知信号类型: input_required"}（带原 reqid）
-                    调用方: 不识别该 error，继续等到总超时
+  (a) follow-up timeout      callee: ask() raises TimeoutError → tool_result{content:[],error:"timed out waiting for client input"}
+  (b) tool exception         callee: tool_result{content:[],error:"<exception text>"}
+  (c) unknown tool           callee: tool_result{content:[],error:"unknown tool: <name>"}  ← returned immediately, no thread started
+  (d) caller overall timeout caller: TimeoutError (drops the wait entry for that reqid) → input_required arriving later is silently discarded
+  (e) peer has no handler    peer: error{code:-32600,message:"unknown signal type: input_required"} (carries the original reqid)
+                             caller: does not recognise that error and keeps waiting until the overall timeout
 ```
 
-## 5. 数据与类型约定
+## 5. Data and type conventions
 
-| 概念 | 类型 | 约束 |
+| Concept | Type | Constraint |
 |---|---|---|
-| 答案 | `Any` | 任意 JSON 可序列化值；`input_fn` 的返回值原样进入 `answer` |
-| 追问文案 | `string` | 单段文本，不含结构化 schema |
-| 工具返回值 | `Any` | 原样进入 `tool_result.payload.content`；falsy 值（`None` / `""` / `0` / `False` / `{}` / `[]`）→ `[]` |
-| 错误文本 | `string` | 人类可读；本模式**不**定义数值错误码 |
+| answer | `Any` | any JSON-serialisable value; the return value of `input_fn` goes into `answer` verbatim |
+| follow-up text | `string` | a single block of text, with no structured schema |
+| tool return value | `Any` | goes verbatim into `tool_result.payload.content`; a falsy value (`None` / `""` / `0` / `False` / `{}` / `[]`) → `[]` |
+| error text | `string` | human-readable; this pattern does **not** define numeric error codes |
 
-本模式**不**定义新的错误码。工具执行失败走 `tool_result.payload.error`（错误即值），协议级失败沿用[错误码表](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#54-错误码)（如 `-32600`）。参数不符合工具声明的 `inputSchema` 时**应当**用 `-32602` 语义的工具失败表达，而不是发 `error` 信号。
+This pattern does **not** define new error codes. Tool execution failures go through `tool_result.payload.error` (the error is a value), while protocol-level failures reuse the [error code table](https://github.com/hxh230802/MSP/blob/master/docs/spec/README.md#54-错误码) (for example `-32600`). When arguments do not match the `inputSchema` declared by the tool, the failure **SHOULD** be expressed as a tool failure with `-32602` semantics rather than by sending an `error` signal.
 
-## 6. 错误处理与边界
+## 6. Error handling and boundaries
 
-**6.1 对端不宣告 / 未激活本模式**——调用方**应当**在调用前检查 `peer(peer_id).supports("msp/multi-round")`；参考实现的 `call_multiround()` 现在**自己**做这件事：先 `ensure_connected()`，再查 `supports()`，未宣告即抛 `RuntimeError`（调用方仍**应当**自行检查以决定是否走降级路径）。对端若没有注册本模式 handler：带 `pattern` 的信号在路由表中查不到，落入协议层默认分支。`tool_call` 会被当作**普通工具调用**处理（可能误命中核心注册表里的同名工具）；`input_required` / `input_response` 则命中「未知信号类型」分支，回 `error`（`code = -32600`）。该 `error` 携带原 `reqid`，协议层 `_on_error` **会**按 `reqid` 唤醒等待中的调用并回 `ToolResult(error=...)`（原实现只记日志、必须等满总超时，见 §12 G3）。
+**6.1 The peer does not announce / has not activated this pattern** — the caller **SHOULD** check `peer(peer_id).supports("msp/multi-round")` before calling; `call_multiround()` in the reference implementation now does this **itself**: it calls `ensure_connected()` first, then queries `supports()`, and raises `RuntimeError` when the pattern has not been announced (the caller still **SHOULD** check on its own to decide whether to take a fallback path). If the peer has not registered a handler for this pattern: signals carrying `pattern` are not found in the routing table and fall into the protocol layer's default branch. `tool_call` is handled as an **ordinary tool call** (it may wrongly hit a tool of the same name in the core registry); `input_required` / `input_response` hit the "unknown signal type" branch and reply with `error` (`code = -32600`). That `error` carries the original `reqid`, and the protocol layer's `_on_error` **will** wake the waiting call by `reqid` and return `ToolResult(error=...)` (the original implementation only logged it and had to wait out the whole overall timeout; see §12 G3).
 
-**6.2 `input_required` 无人应答**——被调方 `ctx.ask()` 的等待表项只登记在**被调方本地**。调用方若丢弃了 `reqid` 对应的等待表项（总超时、进程退出、逻辑分支遗漏），到达的 `input_required` 会被静默忽略，**不**回 `input_response`；被调方只能等到单次追问超时。协议**不**定义「拒绝追问」这一报文；实现者若需要，**应当**用 `input_response.payload.answer = null` 表达「无答案」。
+**6.2 Nothing answers the `input_required`** — the wait entry for the callee's `ctx.ask()` is registered **only locally on the callee**. If the caller has dropped the wait entry for that `reqid` (overall timeout, process exit, a missed branch), an arriving `input_required` is silently ignored and **no** `input_response` is sent; the callee can only wait for the single follow-up timeout. The specification does **not** define a "follow-up refused" message; an implementer that needs one **SHOULD** express "no answer" with `input_response.payload.answer = null`.
 
-**6.3 超时**——单次追问（被调方 `ctx.ask`）默认 `30.0` s，触发后抛 `TimeoutError`、弹出表项，工具通常随即失败并回 `error`；整次调用（调用方 `call_multiround`）默认 `60.0` s，触发后抛 `TimeoutError`、弹出 `reqid` 表项，且**不**向对端发送取消。两者无约束关系：追问次数 × 单次超时**可以**超过整次超时。调用方**应当**令整次超时 ≥ 预期追问次数 × 单次追问超时；参考实现不做校验。
+**6.3 Timeouts** — a single follow-up (the callee's `ctx.ask`) defaults to `30.0` s; on expiry it raises `TimeoutError` and pops the wait entry, and the tool usually fails at once and returns `error`; the whole call (the caller's `call_multiround`) defaults to `60.0` s; on expiry it raises `TimeoutError`, pops the `reqid` entry, and **does not** send a cancellation to the peer. The two are unrelated: the number of follow-ups × the single timeout **MAY** exceed the overall timeout. The caller **SHOULD** make the overall timeout ≥ the expected number of follow-ups × the single follow-up timeout; the reference implementation performs no such check.
 
-**6.4 连接断开**——被调方的应答类信号（`tool_result` / `input_response`）统一经 `_send()` 发出，捕获 `(RuntimeError, ConnectionClosed)` 并降级为日志；连接已断时该次结果丢失且**无**任何补偿，工具函数已产生的副作用不回滚，但**不会**再让异常从工作线程冒出（原实现会让工作线程异常退出，见 §12 G8）。调用方在等待中断开连接时，等待表项由协议层的断线清理唤醒（`ToolResult(error="连接断开")`）。本模式**不**定义断线重连后的续传。
+**6.4 Connection loss** — the callee's response signals (`tool_result` / `input_response`) all go out through `_send()`, which catches `(RuntimeError, ConnectionClosed)` and degrades to a log entry; once the connection is down that result is lost with **no** compensation, side effects the tool function has already produced are not rolled back, but **no** exception is allowed to escape the worker thread any longer (the original implementation let the worker thread exit with an exception; see §12 G8). When the connection drops while the caller is waiting, the wait entry is woken by the protocol layer's disconnection cleanup (`ToolResult(error="connection closed")`). This pattern does **not** define resumption after reconnection.
 
-**6.5 `reqid` 不匹配**——被调方 `_on_input_response` 按 `reqid` 查等待表项，查不到即静默丢弃；调用方 `_on_tool_result` / `_on_input_required` 同样按 `reqid` 查表，查不到即静默丢弃。~~**两侧都不校验来源 `node_id`**~~ ✅ **已修复**：两侧现在都按**连接身份**（而非可伪造的 `sig.source`）核对「这条应答是否来自我调用的那个对端」，不匹配即丢弃。这一条是必需的——参考实现的 `reqid` 是 `mr-1`、`mr-2` 这类**可预测**值，**不得**把它当作安全令牌（[security](../security.md) §3.10）。见 §8。
+**6.5 `reqid` mismatch** — the callee's `_on_input_response` looks up the wait entry by `reqid` and silently discards the message when it finds none; the caller's `_on_tool_result` / `_on_input_required` likewise look up by `reqid` and silently discard on a miss. ~~**Neither side checks the source `node_id`**~~ ✅ **Fixed**: both sides now verify, by **connection identity** (rather than the forgeable `sig.source`), whether "this answer comes from the peer I called", and discard it on a mismatch. This one is necessary — the reference implementation's `reqid` values are **predictable**, such as `mr-1` and `mr-2`, and **MUST NOT** be treated as a security token ([security](../security.md) §3.10). See §8.
 
-**6.6 重入与并发**——并发多次调用**可以**：每个调用有独立 `reqid`、独立的事件与结果槽。但**同一 `reqid` 内并发两次 `ctx.ask()` 不被支持**：等待表项以 `reqid` 为键、只有一个槽位。工具函数**不得**从多个线程同时对同一 `reqid` 调用 `ask()`；参考实现会检测到重入并抛 `RuntimeError`（原实现静默覆盖、前一次必然超时，见 §12 G6）。**重入危险**：`input_fn` 在调用方的读循环线程里执行，若 `input_fn` 内部再发起一次到**同一对端**的调用并等待其回复，回复永远读不到，双方互等至超时。
+**6.6 Re-entrancy and concurrency** — concurrent calls **MAY** happen: each call has its own `reqid` and its own event and result slots. But **two concurrent `ctx.ask()` calls within the same `reqid` are not supported**: the wait entry is keyed by `reqid` and has a single slot. A tool function **MUST NOT** call `ask()` for the same `reqid` from several threads at once; the reference implementation detects re-entrancy and raises `RuntimeError` (the original implementation silently overwrote the entry, so the earlier call was bound to time out; see §12 G6). **Re-entrancy hazard**: `input_fn` runs on the caller's read-loop thread, so if `input_fn` itself starts a call to the **same peer** and waits for the reply, the reply is never read and both sides wait until timeout.
 
-**6.7 回调异常**——`input_fn` 抛出的任何异常都会被调用方捕获，并转成 `answer = {"error": "<异常文本>"}` 后照常回传，**追问不会因此中断**；被调方**必须**自行判断该对象是否是「失败」约定。
+**6.7 Callback exceptions** — any exception raised by `input_fn` is caught by the caller and turned into `answer = {"error": "<exception text>"}`, then sent back as usual, so **the follow-up is not interrupted by it**; the callee **MUST** decide for itself whether that object follows the "failure" convention.
 
-### 6.8 与 MCP `elicitation` 的差异
+### 6.8 Differences from MCP `elicitation`
 
-| 维度 | MCP `elicitation` | `msp/multi-round` |
+| Dimension | MCP `elicitation` | `msp/multi-round` |
 |---|---|---|
-| 请求关联 | **另起一次反向请求**，有独立的请求标识，与原调用不共享 | 延续原调用的 `reqid`，全程同一个关联键 |
-| 原调用状态 | 原调用是否仍在等待由应用层维持 | 原调用在被调方**原地阻塞**，执行栈不丢 |
-| 追问次数 | 一次反向请求对应一次征询 | 同一 `reqid` 内**可以**无限次追问 |
-| 载荷 | 带 JSON Schema 的受约束结构（字段名、类型、枚举） | 只有一段 `prompt` 文本，无 schema |
-| 权限方向 | 约定由 server 向 client 征询 | 双向：只要一方持连接即可发起（此处由被调方发起） |
-| 复用既有原语 | 需新增反向请求通道 | 复用 `tool_call` 的 `reqid` 关联，核心零改动 |
+| request correlation | **starts a separate reverse request** with its own request identifier, not shared with the original call | continues the original call's `reqid`, one correlation key throughout |
+| state of the original call | whether the original call is still waiting is maintained by the application layer | the original call **blocks in place** on the callee; the execution stack is preserved |
+| number of follow-ups | one reverse request per elicitation | **MAY** follow up unlimited times within the same `reqid` |
+| payload | a constrained structure with a JSON Schema (field names, types, enums) | one piece of `prompt` text only, no schema |
+| direction of permission | by convention the server elicits from the client | both directions: either side can start one as long as it holds the connection (here the callee starts it) |
+| reuse of existing primitives | needs a new reverse request channel | reuses the `reqid` correlation of `tool_call`; no change to the core |
 
-结论：`elicitation` 解决的是「服务端能不能问一句」，本模式解决的是「这一次调用的上下文能不能活着等到答案」。两者可共存；在 MSP 中如要表达 `elicitation` 语义，应作为独立能力面（见 [capabilities](../capabilities.md)）而不是复用本模式。
+Conclusion: `elicitation` solves "can the server ask a question", whereas this pattern solves "can the context of this one call stay alive until the answer arrives". The two can coexist; to express `elicitation` semantics in MSP it should be a separate capability surface (see [capabilities](../capabilities.md)) rather than a reuse of this pattern.
 
-## 7. 规范条文汇总
+## 7. Summary of normative provisions
 
-**必须**：① 本模式的四类信号**必须**携带 `pattern = "msp/multi-round"`；② 一次交互内 `input_required`、`input_response`、`tool_result` 的 `reqid` **必须**与起手 `tool_call` 相同；③ 被调方**必须**在独立线程（或等价的非读循环执行体）中执行工具函数；④ `input_required.payload.prompt` 与 `input_response.payload.answer` **必须**存在；⑤ 同一 `reqid` 只**必须**产生一个 `tool_result`；⑥ 未识别的字段、信号类型**不得**导致连接中断（[宽容读取](../base-protocol.md#23-宽容读取)）。
+**MUST**: ① the four signal types of this pattern **MUST** carry `pattern = "msp/multi-round"`; ② within one interaction the `reqid` of `input_required`, `input_response` and `tool_result` **MUST** be the same as that of the opening `tool_call`; ③ the callee **MUST** execute the tool function on a separate thread (or an equivalent execution body outside the read loop); ④ `input_required.payload.prompt` and `input_response.payload.answer` **MUST** be present; ⑤ the same `reqid` **MUST** produce only one `tool_result`; ⑥ unrecognised fields and signal types **MUST NOT** cause the connection to drop ([lenient reading](../base-protocol.md#23-lenient-reading)).
 
-**应当**：⑦ 调用方**应当**在调用前确认对端宣告了本模式；⑧ 调用方**应当**令整次超时覆盖预期的全部追问；⑨ 被调方**应当**把失败表达为 `tool_result.payload.error`，而不是 `error` 信号；⑩ 实现者若要跳过一次追问，**应当**回 `answer = null`，而不是不回。
+**SHOULD**: ⑦ the caller **SHOULD** confirm before calling that the peer has announced this pattern; ⑧ the caller **SHOULD** make the overall timeout cover every expected follow-up; ⑨ the callee **SHOULD** express failures as `tool_result.payload.error` rather than an `error` signal; ⑩ an implementer that wants to skip a follow-up **SHOULD** reply with `answer = null` rather than not replying.
 
-**不得**：⑪ 调用方**不得**假定追问次数、`answer` 的类型或 `prompt` 的结构；⑫ 被调方**不得**在读循环线程内调用 `ctx.ask()`；⑬ `msp/` 命名空间外的模式**不得**复用 `input_required` / `input_response` 这两个 `type`；⑭ 降级实现**不得**静默改变已发出的语义（见 §2.1）。
+**MUST NOT**: ⑪ the caller **MUST NOT** assume the number of follow-ups, the type of `answer` or the structure of `prompt`; ⑫ the callee **MUST NOT** call `ctx.ask()` inside the read-loop thread; ⑬ patterns outside the `msp/` namespace **MUST NOT** reuse the two `type` values `input_required` / `input_response`; ⑭ a fallback implementation **MUST NOT** silently change semantics already emitted (see §2.1).
 
-**可以**：⑮ 实现**可以**不实现本模式；一旦实现**必须**符合本页条文。⑯ 实现**可以**在本页之外扩展 `input_required.payload` 的字段。
+**MAY**: ⑮ an implementation **MAY** not implement this pattern; once it does, it **MUST** conform to the provisions on this page. ⑯ an implementation **MAY** extend the fields of `input_required.payload` beyond this page.
 
-## 8. 安全考量
+## 8. Security considerations
 
-- **来源未校验**：两侧都只按 `reqid` 关联，不校验 `source`。参考实现的 `reqid` 可预测（`mr-<n>`），因此**应当**把「收到 `input_response`」视为**未经认证的输入**，绝**不得**把它当作授权、身份或金额这类高价值决策的唯一依据。实现者**应当**改用不可预测的 `reqid` 并校验来源节点。
-- **追问即数据入口**：`answer` 会直接进入工具函数的控制流。工具**必须**按普通不可信输入校验它（长度、类型、取值范围），**不得**把它拼进命令、路径或查询而不做转义。
-- **信息泄露**：`prompt` 由被调方控制，会被原样交给调用方的 `input_fn`。调用方**应当**把 `prompt` 当作不可信文本渲染或记录，避免注入本地日志格式或终端控制序列。
-- **无授权层**：本模式不做任何授权判定；谁能调用工具由连接与部署策略决定，见 [security](../security.md)。
+- **Source not verified**: both sides correlate only by `reqid` and do not verify `source`. The reference implementation's `reqid` is predictable (`mr-<n>`), so "receiving an `input_response`" **SHOULD** be treated as **unauthenticated input**, and it **MUST NOT** under any circumstances be the sole basis for high-value decisions such as authorization, identity or amount. Implementers **SHOULD** switch to an unpredictable `reqid` and verify the source node.
+- **Every follow-up is a data entry point**: `answer` goes straight into the control flow of the tool function. The tool **MUST** validate it as ordinary untrusted input (length, type, value range) and **MUST NOT** interpolate it into commands, paths or queries without escaping.
+- **Information leakage**: `prompt` is controlled by the callee and is handed verbatim to the caller's `input_fn`. The caller **SHOULD** render or log `prompt` as untrusted text, to avoid injecting into local log formats or terminal control sequences.
+- **No authorization layer**: this pattern makes no authorization decisions; who may call a tool is decided by the connection and deployment policy, see [security](../security.md).
 
-## 9. 已知缺口
+## 9. Known gaps
 
-以下路径在参考实现中**未处理**（状态计为 🟡 **部分实现**；规划中的补法标 🔵）：
+The following paths are **not handled** in the reference implementation (counted as 🟡 **partially implemented**; planned fixes are marked 🔵):
 
-| 编号 | 缺口 | 现状 |
+| ID | Gap | Current state |
 |---|---|---|
-| G1 | 自动降级未实现 | `fallback_to` 只声明不消费；对端不支持时既不降级也不报错，靠总超时兜底 |
-| G2 | ~~调用方不检查对端能力、不自动建连~~ ✅ **已修复** | `call_multiround()` 现在先 `ensure_connected()` 再查 `peer.supports(pattern_id)`；对端未宣告本模式时立即 `RuntimeError`，初始请求发送失败也会清掉等待表并报错 |
-| G3 | ~~`error` 信号不唤醒等待~~ ✅ **已修复** | 协议层 `_on_error` 现在按 `reqid` 唤醒等待中的调用（`ToolResult(error=...)`，含 `code`），不再等满总超时（task G11 同步修复） |
-| G4 | 无取消机制 | 调用方超时后不发任何取消；被调方不知道对方已放弃，工具继续跑到自己超时 |
-| G5 | `input_required` 载荷无结构 | 只有 `prompt` 文本，无参数名/类型/枚举/上下文；无法做机器可校验的追问 |
-| G6 | ~~同一 `reqid` 内并发 `ask()` 会互相覆盖~~ ✅ **已修复** | 等待表仍以 `reqid` 为键、单槽位，但第二次 `ask()` 会显式抛 `RuntimeError`（调用方**不得**并发追问的约束由实现兜住了） |
-| G7 | `input_fn` 跑在读循环线程 | 阻塞型 `input_fn` 会阻塞该连接的全部消息处理；重入同一对端会互等 |
-| G8 | ~~发送端不捕获断线异常~~ ✅ **已修复** | `_reply_result()` / `input_response` 统一经 `_send()` 发送，捕获 `(RuntimeError, ConnectionClosed)` 降级为日志 |
-| G9 | 来源 `node_id` 不校验 | 见 §8 |
-| G10 | ~~`inspect.signature(func)` 在 try 之外~~ ✅ **已修复** | `_run_tool()` 的自省也在 `try` 内，不可自省的函数会回一条 `tool_result{error}` 而不是静默死亡 |
-| G11 | 中途无进度通知 | 追问之外没有「还在跑」的心跳；长工具期间调用方只能凭连接存活判断 |
-| G12 | 🔵 规划中：追问的结构化 schema | 若实现，**必须**新增独立字段，**不得**改变 `prompt` 的含义 |
-| G13 | 🔵 规划中：模式内取消 | 若实现，**必须**在同一 `reqid` 内表达，且被调方**应当**在下一个可中断点响应 |
+| G1 | automatic fallback not implemented | `fallback_to` is only declared, never consumed; when the peer does not support the pattern it neither falls back nor errors, relying on the overall timeout as a backstop |
+| G2 | ~~the caller does not check peer capability and does not connect automatically~~ ✅ **Fixed** | `call_multiround()` now calls `ensure_connected()` before querying `peer.supports(pattern_id)`; it raises `RuntimeError` immediately when the peer has not announced this pattern, and an initial request that fails to send also clears the wait table and reports an error |
+| G3 | ~~the `error` signal does not wake a waiting call~~ ✅ **Fixed** | the protocol layer's `_on_error` now wakes the waiting call by `reqid` (`ToolResult(error=...)`, including `code`) and no longer waits out the overall timeout (fixed together with task G11) |
+| G4 | no cancellation mechanism | the caller sends no cancellation after a timeout; the callee does not know the other side has given up, and the tool keeps running until its own timeout |
+| G5 | `input_required` payload has no structure | only `prompt` text, with no argument names/types/enums/context; machine-checkable follow-ups are impossible |
+| G6 | ~~concurrent `ask()` within the same `reqid` overwrites itself~~ ✅ **Fixed** | the wait table is still keyed by `reqid` with a single slot, but a second `ask()` now raises `RuntimeError` explicitly (the constraint that the caller **MUST NOT** follow up concurrently is now enforced by the implementation) |
+| G7 | `input_fn` runs on the read-loop thread | a blocking `input_fn` blocks all message processing on that connection; re-entering the same peer makes both sides wait for each other |
+| G8 | ~~the sender does not catch disconnection exceptions~~ ✅ **Fixed** | `_reply_result()` / `input_response` are all sent through `_send()`, which catches `(RuntimeError, ConnectionClosed)` and degrades to a log entry |
+| G9 | source `node_id` not verified | see §8 |
+| G10 | ~~`inspect.signature(func)` outside the try~~ ✅ **Fixed** | the introspection in `_run_tool()` is now inside the `try` too, so a function that cannot be introspected returns a `tool_result{error}` instead of dying silently |
+| G11 | no progress notification mid-flight | there is no "still running" heartbeat beyond the follow-ups; during a long tool the caller can only judge by the connection staying alive |
+| G12 | 🔵 planned: structured schema for follow-ups | if implemented, it **MUST** add separate fields and **MUST NOT** change the meaning of `prompt` |
+| G13 | 🔵 planned: cancellation within the pattern | if implemented, it **MUST** be expressed within the same `reqid`, and the callee **SHOULD** respond at the next interruptible point |
 
-## 10. 参考实现映射
+## 10. Reference implementation map
 
-| 条文 | 源码文件与符号 |
+| Provision | Source file and symbol |
 |---|---|
-| §2.1 模式标识 / 降级声明 / 无自动降级 | [`src/msp/patterns/multi_round.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `MultiRoundHandler.pattern_id` / `.fallback_to`；[`src/msp/patterns/base.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/base.py) `PatternHandler.fallback_to` |
-| §2.2 私有信号类型常量 / `pattern` 路由键 | `multi_round.py` `MultiRoundHandler.INPUT_REQUIRED` / `.INPUT_RESPONSE` / `.TOOL_CALL` / `.TOOL_RESULT`；[`protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._dispatch` |
-| §2.3 独立线程执行工具 / `ctx.ask` 签名与阻塞 | `multi_round.py` `MultiRoundHandler._on_tool_call` / `._run_tool` / `_ask`；`RoundContext.ask` |
-| §3.1–§3.4 四类报文的载荷 | `multi_round.py` `call_multiround`（`{"tool":…,"args":…}`）、`_ask`（`{"prompt":…}`）、`_on_input_required`（`{"answer":…}`）、`_reply_result`（`{"content":…,"error":…}`） |
-| §3.4 与核心形态的差异 | `protocol.py` `_normalize_tool_result` / `MSPProtocol._run_tool`（核心路径） |
-| §4 消息流 | `multi_round.py` 模块 docstring 时序图；端到端示例 [`src/examples/multi_round_demo.py`](https://github.com/hxh230802/MSP/blob/master/src/examples/multi_round_demo.py) |
-| §6.1 兜底路由（未知类型回 `-32600`） | `protocol.py` `MSPProtocol._dispatch` / `._dispatch_core` |
-| §6.7 回调异常转答案 | `multi_round.py` `_on_input_required` 的 `try/except` |
-| §9 G6/G7/G9 | `multi_round.py` `_active_asks` / `_pending_calls` 的键与槽位设计 |
-| 模式激活与语法糖 / 预设声明 | [`src/msp/core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `MSPNode.register_pattern` / `._activate_pattern`；`multi_round.py` `install_api`；[`src/msp/core/preset.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/preset.py) `Preset.FULL_PEER` / `LOCAL_AI` / `CLOUD_SERVICE` |
+| §2.1 pattern identity / fallback declaration / no automatic fallback | [`src/msp/patterns/multi_round.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/multi_round.py) `MultiRoundHandler.pattern_id` / `.fallback_to`; [`src/msp/patterns/base.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/base.py) `PatternHandler.fallback_to` |
+| §2.2 private signal type constants / `pattern` routing key | `multi_round.py` `MultiRoundHandler.INPUT_REQUIRED` / `.INPUT_RESPONSE` / `.TOOL_CALL` / `.TOOL_RESULT`; [`protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) `MSPProtocol._dispatch` |
+| §2.3 tool executed on a separate thread / `ctx.ask` signature and blocking | `multi_round.py` `MultiRoundHandler._on_tool_call` / `._run_tool` / `_ask`; `RoundContext.ask` |
+| §3.1–§3.4 payloads of the four message types | `multi_round.py` `call_multiround` (`{"tool":…,"args":…}`), `_ask` (`{"prompt":…}`), `_on_input_required` (`{"answer":…}`), `_reply_result` (`{"content":…,"error":…}`) |
+| §3.4 differences from the core shape | `protocol.py` `_normalize_tool_result` / `MSPProtocol._run_tool` (core path) |
+| §4 message flow | the sequence diagram in the `multi_round.py` module docstring; the end-to-end example [`src/examples/multi_round_demo.py`](https://github.com/hxh230802/MSP/blob/master/src/examples/multi_round_demo.py) |
+| §6.1 backstop routing (unknown types reply `-32600`) | `protocol.py` `MSPProtocol._dispatch` / `._dispatch_core` |
+| §6.7 callback exceptions turned into answers | the `try/except` in `multi_round.py` `_on_input_required` |
+| §9 G6/G7/G9 | the key and slot design of `multi_round.py` `_active_asks` / `_pending_calls` |
+| pattern activation and syntactic sugar / preset declarations | [`src/msp/core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) `MSPNode.register_pattern` / `._activate_pattern`; `multi_round.py` `install_api`; [`src/msp/core/preset.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/preset.py) `Preset.FULL_PEER` / `LOCAL_AI` / `CLOUD_SERVICE` |

@@ -2,7 +2,7 @@ module.exports = { main: ['index', 'intro', 'architecture', 'why-not-mcp', 'prov
     'glossary',
     {
       type: 'category',
-      label: '示例',
+      label: 'Examples',
       items: ['examples/index', 'examples/weather', 'examples/downloader', 'examples/editor', 'examples/probe'],
     },
   ] };

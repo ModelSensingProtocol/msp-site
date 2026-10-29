@@ -1,20 +1,21 @@
-# 快速开始
+# Introduction
 
-五分钟内跑通两个节点：一个提供一个工具，另一个发现它并调用。
+Two nodes, five minutes: one offers a tool, the other discovers it and calls it.
 
-## 1. 安装
+## 1. Install
 
 ```bash
-pip install --pre msp-py        # PyPI 上目前是预发布版本
-# 或者从源码：
+pip install --pre msp-py        # pre-release on PyPI for now
+# or from source:
 pip install -e .
 ```
 
-`pip install -e .` 是"可编辑"安装，改源码立刻生效（建议在虚拟环境里）。
+`pip install -e .` is an editable install — source edits take effect immediately (use a virtual
+environment).
 
-## 2. 提供能力的一方
+## 2. The side that offers a capability
 
-存成 `weather.py`：
+Save as `weather.py`:
 
 ```python
 from msp import MSPNode, Preset
@@ -22,21 +23,22 @@ from msp import MSPNode, Preset
 node = MSPNode("weather", preset=Preset.LOCAL_TOOL)
 
 
-@node.tool("get_weather", "查询城市天气")
+@node.tool("get_weather", "Look up the weather")
 def get_weather(location: str, days: int = 3) -> dict:
     return {"location": location, "days": days, "temp_c": 21}
 
 
 if __name__ == "__main__":
     node.start()
-    input("按回车退出\n")
+    input("press enter to quit\n")
 ```
 
-`@node.tool` 不只注册函数，还会**把工具声明进自己的能力清单**——邻居握手时就能看到它。
+`@node.tool` does more than register a function: it **declares the tool in the node's capability
+manifest**, so a neighbour sees it during the handshake.
 
-## 3. 使用能力的一方
+## 3. The side that uses it
 
-存成 `agent.py`，两个终端各跑一个：
+Save as `agent.py`, run one in each terminal:
 
 ```python
 from msp import MSPNode, Preset
@@ -44,43 +46,43 @@ from msp import MSPNode, Preset
 node = MSPNode("agent", preset=Preset.FULL_PEER)
 node.start()
 
-print("邻居:", node.neighbors())
+print("neighbours:", node.neighbors())
 
-result = node.call("weather", "get_weather", {"location": "杭州"})
-print("结果:", result.unwrap() if not result.is_error else result.error)
+result = node.call("weather", "get_weather", {"location": "Hangzhou"})
+print("result:", result.unwrap() if not result.is_error else result.error)
 ```
 
-两秒内你应该看到 `邻居: ['weather']` 和一份 JSON。
+Within two seconds you should see `neighbours: ['weather']` and a JSON payload.
 
-## 4. 它们是怎么互相找到的
+## 4. How they found each other
 
-默认都往同一个目录写"我在这里"的声明、并轮询这个目录：
+Both write a "I am here" declaration into the same directory and poll that directory:
 
 ```
-~/.msp/nodes/weather.json     ← 节点 id 就是文件名
+~/.msp/nodes/weather.json     ← the node id is the file name
 ~/.msp/nodes/agent.json
 ```
 
-`timestamp` 是**租约**，不是元数据：
+`timestamp` is a **lease**, not metadata:
 
-| 参数 | 值 | 含义 |
+| Parameter | Value | Meaning |
 |---|---|---|
-| 续租周期 | **10 秒** | 宣告方每 10 秒重写一次 `timestamp` |
-| 过期阈值 | **30 秒** | `now - timestamp > 30s` 即过期，等同"节点已死" |
-| 轮询兜底 | **30 秒** | 事件通道失效时的全量扫描周期 |
+| renew interval | **10 s** | the announcer rewrites `timestamp` every 10 s |
+| stale threshold | **30 s** | `now - timestamp > 30s` means expired, i.e. "node is dead" |
+| poll fallback | **30 s** | full directory scan when the event channel misses something |
 
-所以**崩溃节点的消失上界是 60 秒**：最多 30 秒才被判过期，最坏再等一个 30 秒轮询周期。
+So **a crashed node takes at most 60 s to disappear**: up to 30 s before it is judged stale,
+plus at most one more 30 s poll cycle.
 
-发现由两条腿组成：**事件通道**（文件系统监听，实时）与**轮询兜底**（30 秒一次全量扫，
-兜住事件丢失）。
+Discovery has two legs: a **filesystem event channel** (realtime) and a **30 s poll fallback**
+for when events are missed. Discovery and announcement are **orthogonal layers** — scan without
+announcing (observe only), or announce without scanning (be listed without dialling out).
 
-想换目录就传 `nodes_dir=`。同一台机器上两个节点用不同目录，就互相看不见。
+Pass `nodes_dir=` to use another directory. Two nodes using different directories simply cannot
+see each other.
 
-**「发现」与「宣告」是两个正交的层**：只扫不写 = 只看不说（观察者）；
-只写不扫 = 只说（把自己挂出去，但不主动连别人）。
+## 5. Next
 
-## 5. 下一步
-
-- 想暴露更多接口、想主动推送 → [提供能力](provide-tools.md)
-- 想看调用失败怎么办、怎么订阅广播 → [使用能力](consume.md)
-- 想一次跑完整个例子（不需要开两个终端）→ `PYTHONPATH=src python docs/wiki/examples/two_nodes.py`
+- Expose more interfaces, push events → [Provide tools and signals](provide-tools.md)
+- Handle failed calls, subscribe to broadcasts → [Discover, call, subscribe](consume.md)
+- Run the whole example at once (no second terminal) → `PYTHONPATH=src python docs/wiki/examples/two_nodes.py`

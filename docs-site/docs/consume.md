@@ -1,59 +1,56 @@
-# 使用能力：发现、调用、订阅
+# Using capabilities: discovery, calling, subscribing
 
-## 发现
+## Discovery
 
 ```python
 node.start()
-print(node.neighbors())        # 已知的邻居 id
-print(node.connections())      # 已经连上的邻居 id
-print(node.peer_manifest("weather"))   # 对方宣告的原始清单
+print(node.neighbors())        # known neighbour ids
+print(node.connections())      # ids of neighbours already connected
+print(node.peer_manifest("weather"))   # the raw manifest the other side announced
 ```
 
-`neighbors()` 与 `connections()` 的差别很重要：**邻居已知 ≠ 连接已建立**。默认
-`connect_policy="eager"` 会主动去连，`"lazy"` 则等到真要调用时才连。
+The difference between `neighbors()` and `connections()` matters: **a known neighbour is not a connected one**. By default `connect_policy="eager"` dials out eagerly, while `"lazy"` waits until a call is actually made.
 
-### start() 会不会阻塞
+### Does start() block
 
-`start(settle=True)`（默认）会等**这次启动过程中**由发现触发的建连全部落地，最多
-`settle_timeout`（默认 0.5 秒），返回是否在超时前稳定。所以：
+`start(settle=True)` (the default) waits for every connection triggered by discovery **during this startup** to land, up to `settle_timeout` (0.5 seconds by default), and returns whether things settled before the timeout. So:
 
-- 启动后立刻 `publish` / `call` 不会打到空的连接集合上
-- 但它**只等、不发起**——不会为了"稳定"去连新的节点
-- 懒连接模式下它是空操作
+- A `publish` / `call` straight after startup does not hit an empty connection set
+- But it **only waits, it never dials** — it will not connect new nodes in the name of "settling"
+- In lazy connection mode it is a no-op
 
-想手动再稳一次：
+To settle again by hand:
 
 ```python
 node.start(settle=False)
 node.settle(1.0)
 ```
 
-## 调用工具
+## Calling tools
 
 ```python
-result = node.call("weather", "get_weather", {"location": "杭州"}, timeout=5.0)
+result = node.call("weather", "get_weather", {"location": "Hangzhou"}, timeout=5.0)
 ```
 
-失败**不抛异常**，返回带错误的 `ToolResult`：
+Failure **does not raise**; it returns a `ToolResult` carrying the error:
 
 ```python
 if result.is_error:
-    print("失败:", result.error)      # 对端不可达 / 未知工具 / 超时 / 中途断开
+    print("failed:", result.error)      # peer unreachable / unknown tool / timeout / dropped midway
 else:
-    data = result.structured          # 工具函数返回的 dict
+    data = result.structured          # the dict returned by the tool function
 ```
 
-两个便利方法：
+Two convenience methods:
 
-| 用法 | 行为 |
+| Usage | Behaviour |
 |---|---|
-| `result.unwrap()` | 成功返回 `structured`，失败抛 `ToolError` |
-| `result.text()` | 把所有 text 块拼成字符串 |
+| `result.unwrap()` | Returns `structured` on success, raises `ToolError` on failure |
+| `result.text()` | Joins all text blocks into a string |
 
-**成功时 `result.error` 是空字符串，不是 `None`**——判断成功请用 `is_error` 或 `if result.error:`，
-不要写 `if result.error is None`。
+**On success `result.error` is the empty string, not `None`** — test success with `is_error` or `if result.error:`, never with `if result.error is None`.
 
-## 订阅广播
+## Subscribing to broadcasts
 
 ```python
 @node.on("weather.*")
@@ -61,43 +58,40 @@ def handle(sig):
     print(sig.path, sig.payload, sig.source)
 ```
 
-- 路径支持 `*`（单段）与 `**`（多段）
-- `node.on(None)` 收全部
-- 处理函数在**独立线程**里跑（保序、不阻塞读循环）；慢回调不会拖住心跳
+- Paths support `*` (one segment) and `**` (many segments)
+- `node.on(None)` receives everything
+- Handlers run on a **separate thread** (ordered, and they do not block the read loop); a slow callback does not stall the heartbeat
 
-### 信号会丢，这是设计
+### Signals get lost, and that is by design
 
-信号是广播、没有留存：**没连上时发的就永久丢失**，重连也不补发。所以正确的用法是
-"信号当变化通知，状态靠工具去查"：
+Signals are broadcasts with no retention: **one sent while you are not connected is lost for good**, and reconnecting does not replay it. So the correct usage is "treat signals as change notifications, and query state through tools":
 
 ```python
 @node.on("download.completed")
 def done(sig):
-    # 不信任 payload 是完整状态，回查一次
+    # do not trust the payload to be the complete state; read it back
     task = node.call("downloader", "get_task", {"taskId": sig.payload["taskId"]}).unwrap()
     ...
 ```
 
-## 断线与重连
+## Disconnection and reconnection
 
-- 心跳 15 秒 PING、45 秒无响应判失联
-- 失联时**所有挂起的调用立刻失败返回**，不会白等到超时
-- 重连由发现机制负责：节点的声明还在目录里，下一轮扫描会重新拨过去
-- 想感知状态：
+- Heartbeat PING every 15 seconds; 45 seconds without a response counts as liveness loss
+- On liveness loss **every pending call fails and returns at once**; nothing waits out its timeout for nothing
+- Reconnection is the discovery mechanism's job: the node's announcement is still in the directory, and the next scan dials it again
+- To observe state changes:
 
 ```python
-node.on_connected(lambda peer: print("连上", peer))
-node.on_disconnected(lambda peer: print("断开", peer))
+node.on_connected(lambda peer: print("connected", peer))
+node.on_disconnected(lambda peer: print("disconnected", peer))
 ```
 
-## 观测
+## Observation
 
 ```python
 print(node.metrics())
 ```
 
-计数覆盖：连接（opened/replaced/condemned）、信号（accepted/out/rejected/broadcastSkipped）、
-工具（dispatched/rejected/shed）、任务线程（active/peak）。
+The counters cover: connections (opened/replaced/condemned), signals (accepted/out/rejected/broadcastSkipped), tools (dispatched/rejected/shed), task threads (active/peak).
 
-排查时先看 `metrics_line()`：`signalsRejected>0` 通常是授权问题，`broadcastSkipped>0` 说明
-对方没订阅那条路径（协议上这是正常的，不是错误）。
+When troubleshooting, look at `metrics_line()` first: `signalsRejected>0` is usually an authorization problem, and `broadcastSkipped>0` means the other side did not subscribe to that path (under the protocol this is normal, not an error).

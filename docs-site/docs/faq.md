@@ -1,71 +1,84 @@
-# FAQ 与排查
+# FAQ and Troubleshooting
 
-## 常见问题
+## Common questions
 
-### MSP 和 MCP 是什么关系？
+### How does MSP relate to MCP?
 
-不是替代关系，是形状不同：MCP 是 hub-and-spoke 的工具协议，MSP 是网状的对等协议——节点有租约
-（存在感）、能主动广播（推送）、能互相直接服务。为什么这决定了本地软件该用哪个，见
-[`docs/POSITIONING.zh-CN.md`](https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md)。
+Not as a replacement — the shapes differ: MCP is a hub-and-spoke tool protocol, MSP is a mesh
+peer-to-peer protocol — nodes hold leases (a sense of presence), can broadcast on their own
+initiative (push), and can serve each other directly. For why that decides which one local
+software should use, see
+[`docs/POSITIONING.zh-CN.md`](https://github.com/hxh230802/MSP/blob/master/docs/POSITIONING.zh-CN.md).
 
-仓库里的 `mcp/` 是**互操作适配层**：把 MCP server 包成 MSP 节点，而不是让运行时同时说两种协议。
+The `mcp/` directory in the repository is the **interoperability adapter layer**: it wraps MCP
+servers as MSP nodes, rather than making the runtime speak two protocols at once.
 
-### 为什么不直接用 stdio 的 MCP？
+### Why not just use MCP over stdio?
 
-stdio 的生命周期绑在会话上：客户端**拉起**进程，会话结束进程就死；而且拉起的是**第二个实例**，
-看不到你屏幕上开着的那个文档。桌面软件要的是"软件活着能力就在"，这一点 stdio 结构上给不了。
+With stdio the lifetime is tied to the session: the client **spawns** the process, and the
+process dies when the session ends; what gets spawned is also a **second instance**, which
+cannot see the document open on your screen. Desktop software wants "while the software is
+alive, its capabilities are there", and stdio cannot structurally deliver that.
 
-### 能给两台机器用吗？
+### Can two machines use it?
 
-可以，TCP 本来就能跨机。但要自己解决：地址与发现（发现目录是本机的，跨机要么共享目录、要么用
-`add_manual_source` / 手动指定对端）、TLS（WebSocket 传输目前**没有** `wss://`，需要反向代理终结
-TLS）、以及授权（跨机默认不是"可达即信任"）。
+Yes — TCP has always worked across machines. But you have to sort out the rest yourself:
+addresses and discovery (the discovery directory is local, so across machines you either share
+a directory or use `add_manual_source` / name the peer manually), TLS (the WebSocket transport
+currently has **no** `wss://`, so you need a reverse proxy to terminate TLS), and authorization
+(across machines the default is not "reachable means trusted").
 
-### Windows 上有些用例被跳过
+### Some cases are skipped on Windows
 
-Windows 没有 `AF_UNIX`，`tests/test_uds.py` 的 4 个 UDS 用例会自动 skip——不是失败。
+Windows has no `AF_UNIX`, so the four UDS cases in `tests/test_uds.py` are skipped
+automatically — they are not failures.
 
-### 同一台机器跑多个节点要注意什么？
+### What to watch out for when running several nodes on one machine?
 
-- **节点 id 必须互不相同**：id 是连接表的键，两个进程同 id 会在对端眼里变成同一个 peer，后连的
-  把先连的踢掉
-- 想隔离就各用各的 `nodes_dir`
+- **Node ids** **MUST** be distinct: the id is the key of the connection table, so two processes
+  with the same id look like one peer to the other side, and the later connection kicks out the
+  earlier one
+- For isolation, give each node its own `nodes_dir`
 
-## 排查表
+## Troubleshooting table
 
-| 症状 | 先查什么 | 常见原因 |
+| Symptom | What to check first | Common causes |
 |---|---|---|
-| `neighbors()` 是空的 | 两边 `nodes_dir` 是否同一个目录；目录里有没有对方的 `<id>.json` | 目录不同；id 含非法字符（大写/点号）；声明超过 30 秒没续租（发现侧最坏 60 秒才反应过来） |
-| 邻居有，`connections()` 没有 | 对方端口是否可达；防火墙 | 端口被拦；对方已退出但声明还没过期 |
-| `call()` 报"未连接/未知节点" | `ensure_connected(peer_id)` 的异常信息 | 名字打错；对方没宣告这个工具 |
-| `call()` 超时 | 对方的 `metrics_line()` 里 `dispatched` 有没有涨 | 工具函数卡住（同步阻塞操作）；`timeout` 设太短 |
-| 收不到信号 | 发布方的 `metrics_line()`：`broadcastSkipped` | 发布方按 `sub` 授权过滤掉了你；或你订阅的路径模式不匹配 |
-| 信号收到一半就没了 | 连接是否重建过 | 信号没有留存，断线期间的发不补 |
-| 连接数反复涨跌（`replaced` 在涨） | 两个节点是否用了同一个 id | id 冲突；或两个节点同时反复重连 |
-| 同一路径的信号被拒（`signalsRejected`） | 授权表 | 跨机时默认不放行未授权路径 |
+| `neighbors()` is empty | Whether both sides use the same `nodes_dir`; whether the other side's `<id>.json` is in that directory | Different directories; the id contains illegal characters (uppercase letters / dots); the announce has not been renewed for over 30 s (the discovery side can take up to 60 s to notice) |
+| Neighbours exist, `connections()` does not | Whether the other side's port is reachable; firewall | Port blocked; the other side has exited but its announce has not expired |
+| `call()` reports "not connected / unknown node" | The exception message from `ensure_connected(peer_id)` | The name is misspelled; the other side did not announce that tool |
+| `call()` times out | Whether `dispatched` in the other side's `metrics_line()` is increasing | The tool function is stuck (a blocking synchronous operation); `timeout` set too short |
+| Signals are not received | The publisher's `metrics_line()`: `broadcastSkipped` | The publisher filtered you out by `sub` authorization; or the path pattern you subscribed to does not match |
+| A signal stops halfway through | Whether the connection was ever re-established | Signals are not retained; anything sent while the link is down is not replayed |
+| The connection count keeps rising and falling (`replaced` is increasing) | Whether two nodes are using the same id | Id conflict; or two nodes repeatedly reconnecting at the same time |
+| Signals on the same path are rejected (`signalsRejected`) | The authorization table | Across machines, unauthorized paths are not allowed by default |
 
-## 定位手段（按顺序）
+## Narrowing it down (in order)
 
-1. **发现层**：`ls ~/.msp/nodes/`，看对方的 `<id>.json` 在不在、时间戳新不新
-2. **连接层**：`node.connections()`；对方 `peer_manifest("我")` 能不能看到我
-3. **能力层**：`node.peer_manifest("对方")` 里有没有那个工具/信号
-4. **计数层**：两边都打印 `metrics_line()`，看是"没发出"还是"没收到"
-5. **线上报文**：真需要时，把连接换成本地 socket 抓一次 4 字节长度前缀 + JSON
+1. **Discovery layer**: `ls ~/.msp/nodes/` — is the other side's `<id>.json` there, and is the
+   timestamp fresh?
+2. **Connection layer**: `node.connections()`; can the other side see me in
+   `node.peer_manifest("me")`?
+3. **Capability layer**: is that tool/signal in `node.peer_manifest("peer")`?
+4. **Counter layer**: print `metrics_line()` on both sides, to see whether it was "never sent"
+   or "never received"
+5. **On-the-wire messages**: when you really need it, switch the connection to a local socket and
+   capture one 4-byte length prefix + JSON
 
-## 调试时最省事的两条
+## The two easiest things to do while debugging
 
 ```python
 node = MSPNode("probe", preset=Preset.FULL_PEER)
 node.start()
-print(node.neighbors(), node.connections())        # 发现 + 连接
-print(node.peer_manifest("weather"))               # 对方到底宣告了什么
+print(node.neighbors(), node.connections())        # discovery + connections
+print(node.peer_manifest("weather"))               # what the other side actually announced
 ```
 
-## 还是不通
+## Still not working
 
-把这几样一起贴出来，比描述现象有用得多：
+Paste all of these together — far more useful than describing the symptoms:
 
-- 两边节点的 id、`preset`、`nodes_dir`
-- `ls -l <nodes_dir>` 的结果（看声明文件时间戳）
-- 两边的 `metrics_line()`
-- 操作系统与 Python 版本
+- the id, `preset` and `nodes_dir` of both nodes
+- the output of `ls -l <nodes_dir>` (to see the announce file timestamps)
+- `metrics_line()` from both sides
+- operating system and Python version

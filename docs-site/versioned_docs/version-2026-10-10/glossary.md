@@ -1,27 +1,27 @@
-# 术语表
+# Glossary
 
-按在协议里的层次从低到高排。
+Ordered from the lowest to the highest layer in the protocol.
 
-| 术语 | 英文 | 一句话 | 在哪 |
+| Term | English | One-liner | Where |
 |---|---|---|---|
-| **信号** | signal | 一条带路径的 JSON 报文；8 个顶层字段恒定，未知字段进 `extras` | [`core/signal.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/signal.py) |
-| **分帧** | framing | 4 字节大端长度前缀 + UTF-8 JSON | [`protocol/framing.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/framing.py) |
-| **清单** | manifest | 节点宣告自己的工具、信号、能力、模式 | [`core/manifest.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/manifest.py) |
-| **握手** | handshake | `HELLO`（带 manifest）→ `ACK`（带回对方 manifest） | [`protocol/protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) |
-| **去重仲裁** | dedup / canonical direction | 两个节点同时拨号时，按 node_id 字典序保留一个方向 | 同上 |
-| **工具** | tool | 请求-应答的能力，有名字、描述、输入 schema | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
-| **调用** | call | 调对端工具，返回 `ToolResult`；失败不抛异常 | 同上 |
-| **广播** | publish / broadcast | 发一条信号给所有已订阅的对端；发完即忘、无留存 | 同上 |
-| **订阅** | subscription | 用路径模式（`*` / `**`）注册本地回调 | [`protocol/matcher.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/matcher.py) |
-| **发现** | discovery | 扫描共享目录，把新节点变成可拨的对端 | [`discovery/`](https://github.com/hxh230802/MSP/tree/master/src/msp/discovery/) |
-| **宣告** | presence | 往共享目录写自己的声明文件并续租 | [`presence/`](https://github.com/hxh230802/MSP/tree/master/src/msp/presence/) |
-| **租约** | lease | 每 10 秒续租，30 秒未续即失效；发现侧上界 60 秒 | 同上 |
-| **预置** | preset | 一组能力的打包：发现、宣告、传输、模式、连接策略 | [`core/preset.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/preset.py) |
-| **连接策略** | connect policy | `eager`（发现即连）/ `lazy`（用到才连） | 同上 |
-| **稳定** | settle | 等"这次启动触发的建连"落地，只等不发起 | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
-| **模式** | pattern | 可插拔的交互形状：`request-reply` / `publish-subscribe` / `multi-round` / `task` | [`patterns/`](https://github.com/hxh230802/MSP/tree/master/src/msp/patterns/) |
-| **任务** | task | multi-round 的一种：有队列、有状态、可回查 | [`patterns/task.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) |
-| **授权** | grant | 按 `(对端, 路径模式)` 决定能不能发/收/调；跨机默认不信任 | [`protocol/protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) |
-| **本机对端** | local peer | 回环 TCP 或 UDS 连接的对端，默认视为本机 | 同上 |
-| **指标** | metrics | 连接 / 信号 / 工具 / 任务线程各维度的计数 | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
-| **适配层** | adapter | 把 MCP server 包成一个 MSP 节点的那一层 | [`mcp/`](https://github.com/hxh230802/MSP/tree/master/src/msp/mcp/) |
+| **Signal** | signal | A JSON message carrying a path; the 8 top-level fields are fixed, unknown fields go into `extras` | [`core/signal.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/signal.py) |
+| **Framing** | framing | 4-byte big-endian length prefix + UTF-8 JSON | [`protocol/framing.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/framing.py) |
+| **Manifest** | manifest | A node announces its own tools, signals, capabilities and patterns | [`core/manifest.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/manifest.py) |
+| **Handshake** | handshake | `HELLO` (with a manifest) → `ACK` (with the other side's manifest) | [`protocol/protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) |
+| **Deduplication arbitration** | dedup / canonical direction | When two nodes dial each other at the same time, keep one direction by node_id lexicographic order | Same as above |
+| **Tool** | tool | A request/reply capability with a name, a description and an input schema | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
+| **Call** | call | Call a peer's tool and get back a `ToolResult`; a failure raises no exception | Same as above |
+| **Broadcast** | publish / broadcast | Send one signal to every subscribed peer; fire and forget, nothing is retained | Same as above |
+| **Subscription** | subscription | Register a local callback with a path pattern (`*` / `**`) | [`protocol/matcher.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/matcher.py) |
+| **Discovery** | discovery | Scan the shared directory and turn new nodes into dialable peers | [`discovery/`](https://github.com/hxh230802/MSP/tree/master/src/msp/discovery/) |
+| **Presence** | presence | Write your own declaration file into the shared directory and renew the lease | [`presence/`](https://github.com/hxh230802/MSP/tree/master/src/msp/presence/) |
+| **Lease** | lease | Renewed every 10 seconds; it lapses after 30 seconds without renewal; the discovery side's upper bound is 60 seconds | Same as above |
+| **Preset** | preset | A package of capabilities: discovery, presence, transport, pattern, connect policy | [`core/preset.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/preset.py) |
+| **Connect policy** | connect policy | `eager` (connect on discovery) / `lazy` (connect on use) | Same as above |
+| **Settle** | settle | Wait for the connections triggered by this startup to land; it only waits, never initiates | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
+| **Pattern** | pattern | A pluggable interaction shape: `request-reply` / `publish-subscribe` / `multi-round` / `task` | [`patterns/`](https://github.com/hxh230802/MSP/tree/master/src/msp/patterns/) |
+| **Task** | task | One kind of multi-round: it has a queue, it has state, and it can be queried later | [`patterns/task.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/patterns/task.py) |
+| **Grant** | grant | Decides whether one may send/receive/call, by `(peer, path pattern)`; other machines are untrusted by default | [`protocol/protocol.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/protocol/protocol.py) |
+| **Local peer** | local peer | A peer connected over loopback TCP or UDS, treated as local by default | Same as above |
+| **Metrics** | metrics | Counters for each dimension: connections / signals / tools / task threads | [`core/node.py`](https://github.com/hxh230802/MSP/blob/master/src/msp/core/node.py) |
+| **Adapter** | adapter | The layer that wraps an MCP server into an MSP node | [`mcp/`](https://github.com/hxh230802/MSP/tree/master/src/msp/mcp/) |

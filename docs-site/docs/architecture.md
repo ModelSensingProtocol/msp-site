@@ -1,112 +1,112 @@
-# 核心概念
+# Core Concepts
 
-五个概念，从上到下依次依赖。
+Five concepts, each depending on the one below it.
 
 ```
                     ┌─────────────┐
-                    │   节点 node │  一个进程里的参与者，有唯一 id
+                    │    node     │  a participant inside a process, with a unique id
                     └──────┬──────┘
-            发现目录 + 租约 │            握手交换 manifest
+        discovery dir + lease │         handshake exchanges the manifest
                     ┌──────┴──────┐
         ┌───────────┴───┐   ┌─────┴─────────┐
-        │ 工具 tool      │   │ 信号 signal    │  能力清单里被宣告的两类东西
-        │ （请求-应答）   │   │ （广播，发完即忘）│
+        │ tool          │   │ signal        │  the two kinds of thing announced in a manifest
+        │ (request/reply)│  │ (broadcast, fire-and-forget)│
         └───────────┬───┘   └─────┬─────────┘
                     │             │
               ┌─────┴─────────────┴─────┐
-              │ 连接 connection           │  节点之间一条 TCP 长连接
+              │ connection              │  a long-lived TCP connection between nodes
               └──────────────────────────┘
 ```
 
-## 节点（node）
+## Node
 
-一个进程里的参与者。构造时给一个 id，就是它在网络里的名字：
+A participant inside a process. You give it an id at construction time; that is its name on the network:
 
 ```python
 node = MSPNode("weather", preset=Preset.LOCAL_TOOL)
 ```
 
-id 必须匹配 `^[a-z0-9_-]+$`——**小写、数字、下划线、连字符**，没有点、没有大写。
+The id **MUST** match `^[a-z0-9_-]+$` — **lowercase letters, digits, underscores, hyphens**, with no dots and no uppercase.
 
-**id 会影响连接方向。** 两个节点互相发现时会同时拨号，MSP 按字典序挑一个方向、关掉另一条：
-`node_id` 更小的那方负责出站。这不是安全机制，只是去重规则；但给云节点起名时要注意
-（字典序在前的节点会成为主动出站方）。
+**The id affects the direction of the connection.** When two nodes discover each other they dial at the same time; MSP picks one direction by lexicographic order and closes the other:
+the side with the smaller `node_id` is responsible for outbound. This is not a security mechanism, only a deduplication rule; it still matters when naming a cloud node
+(the node that sorts first becomes the one dialling out).
 
-## 预置（preset）
+## Preset
 
-预设决定这个节点具备哪些能力，不用逐个装：
+A preset decides which capabilities the node has, so you do not install them one by one:
 
-| preset | 用途 |
+| preset | Purpose |
 |---|---|
-| `Preset.LOCAL_TOOL` | 本机工具提供者：宣告工具、可被发现 |
-| `Preset.FULL_PEER` | 完整对等节点：既能被调也能调别人、能订阅广播 |
-| `Preset.LOCAL_AI` | AI 应用侧：连本机工具、默认懒连接 |
-| `Preset.CLOUD_SERVICE` | 云端服务节点 |
-| `Preset.OBSERVER` | 只观察不提供能力 |
-| `Preset.MANUAL_PEER` | 只有手动指定的对端，不自动发现 |
+| `Preset.LOCAL_TOOL` | Local tool provider: announces tools, is discoverable |
+| `Preset.FULL_PEER` | Full peer node: can both be called and call others, and can subscribe to broadcasts |
+| `Preset.LOCAL_AI` | AI application side: connects to local tools, lazy connection by default |
+| `Preset.CLOUD_SERVICE` | Cloud service node |
+| `Preset.OBSERVER` | Only observes, offers no capabilities |
+| `Preset.MANUAL_PEER` | Only manually specified peers, no automatic discovery |
 
-## 工具（tool）
+## Tool
 
-**请求-应答**。调用方发起、拿结果、有超时：
+**Request/reply.** The caller initiates, gets a result, and there is a timeout:
 
 ```python
-@node.tool("get_weather", "查询城市天气")
+@node.tool("get_weather", "Look up the weather")
 def get_weather(location: str, days: int = 3) -> dict:
     ...
 ```
 
-- 返回值会被包成 `ToolResult`，调用方用 `result.structured` 或 `result.unwrap()` 取
-- 出错**不抛异常**：`result.is_error` 为真，`result.error` 里是原因
-- `input_schema` 默认从类型注解生成，仅用于对外宣告，**不参与运行时校验**
+- The return value is wrapped in a `ToolResult`; the caller reads it with `result.structured` or `result.unwrap()`
+- An error **does not raise an exception**: `result.is_error` is true, and `result.error` holds the reason
+- `input_schema` is generated from the type annotations by default; it is only used for announcement and **does not take part in runtime validation**
 
-## 信号（signal）
+## Signal
 
-**广播**。发出去就不管了，收不收、收几条都不由发送方保证：
+**Broadcast.** Once it is sent you are done; the sender guarantees neither whether it arrives nor how many copies do:
 
 ```python
-node.declare_signal("weather.updated", description="天气数据更新")
-node.publish("weather.updated", {"location": "杭州", "temp_c": 21})
+node.declare_signal("weather.updated", description="Weather data updated")
+node.publish("weather.updated", {"location": "Hangzhou", "temp_c": 21})
 ```
 
-对面这样收：
+The other side receives it like this:
 
 ```python
-@node.on("weather.*")            # 支持 * 与 ** 通配
+@node.on("weather.*")            # supports * and ** wildcards
 def handle(sig):
     print(sig.path, sig.payload)
 ```
 
-**信号没有留存**：没连上时发的就永远丢了，重连也不会补发。要"当前值"必须自己拉一次快照
-（用工具查），把信号当成"变化通知"而不是状态。
+**Signals are not retained**: anything sent while disconnected is lost for good, and a reconnect does not replay it. For the "current value" you **MUST** fetch a snapshot yourself
+(query it with a tool); treat a signal as a change notification rather than as state.
 
-## 租约（lease）与发现
+## Leases and discovery
 
-**目录宣告 + 租约**：节点往 `~/.msp/nodes/<node_id>.json` 写一份声明，内容是端点
-（host/port）与 `timestamp`；运行期间每 **10 秒**重写一次 `timestamp`。
+**Directory announcement + lease**: a node writes a declaration to `~/.msp/nodes/<node_id>.json`, containing the endpoint
+(host/port) and a `timestamp`; while running it rewrites the `timestamp` every **10 seconds**.
 
-`now - timestamp > 30 秒` 即过期，等同"节点已死"——所以**崩溃节点的消失上界是 60 秒**
-（30 秒过期 + 最坏一个 30 秒轮询周期）。
+`now - timestamp > 30 seconds` means expired, equivalent to "the node is dead" — so **the upper bound for a crashed node to disappear is 60 seconds**
+(30 seconds to expire plus at worst one 30-second polling cycle).
 
-发现由两条腿组成：**事件通道**（文件系统监听，实时）与**轮询兜底**（30 秒一次全量扫描）。
+Discovery stands on two legs: an **event channel** (filesystem watching, real time) and a **polling fallback** (a full scan every 30 seconds).
 
-**发现与宣告是两个正交的层**：只扫不写 = 只看不说；只写不扫 = 只说。
-换目录传 `nodes_dir=`，不同目录互相看不见。
+**Discovery and announcement are two orthogonal layers**: scan but do not write = watch but stay silent; write but do not scan = only announce.
+Change the directory by passing `nodes_dir=`; different directories cannot see each other.
 
-## 连接（connection）
+## Connection
 
-一条已建立的 TCP 长连接。握手时双方交换 `manifest`（工具、信号、能力），之后：
+An established long-lived TCP connection. During the handshake the two sides exchange the `manifest` (tools, signals, capabilities), after which:
 
-- 心跳：15 秒 PING，45 秒无响应判失联
-- 断线时所有挂起的调用立刻失败返回，不会白等到超时
-- 一个节点可以与多个邻居同时保持连接
+- Heartbeat: PING every 15 seconds; no response for 45 seconds is judged liveness loss
+- When the link drops, every pending call fails immediately instead of waiting out its timeout
+- A node can hold connections to several neighbours at once
 
-## 线格式（wire）
+## Wire format
 
-8 个顶层字段恒定的 JSON，前面加 4 字节大端长度前缀：
+JSON with eight constant top-level fields, prefixed with a 4-byte big-endian length:
 
 ```json
 {"type":"tool_call","source":"agent","pattern":null,"target":"weather",
  "path":null,"reqid":"r1","payload":{"tool":"get_weather","args":{...}},"timestamp":1761000000.0}
 ```
 
-未知的顶层字段会被保守地保留在 `extras` 里并原样回显——这是给协议演进留的余地。
+Unknown top-level fields are conservatively kept in `extras` and echoed back unchanged — this leaves room for the protocol to evolve.

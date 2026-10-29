@@ -1,34 +1,34 @@
 ---
-sidebar_label: 观察者：只看不说
+sidebar_label: "Observer: look but say nothing"
 ---
 
-# 观察者：只看不说
+# Observer: look but say nothing
 
-`Preset.OBSERVER` 只**扫描**目录、不**宣告**自己：它能看见网上有什么，别人看不见它。发现与宣告是两个正交的层。
+`Preset.OBSERVER` only **scans** the directory; it does not **announce** itself: it can see what is on the network, others cannot see it. Discovery and announcement are two orthogonal layers.
 
-## 运行
+## Running
 
 ```bash
 PYTHONPATH=src python examples/probe.py
 ```
 
-## 你会看到
+## What you will see
 
-每 5 秒打印一次邻居列表；这个节点不会出现在别人的邻居里。
+Every 5 seconds it prints the neighbour list; this node will not appear in anyone else's neighbour list.
 
-## 代码
+## Code
 
-下载：<a href="../probe.py" download><code>probe.py</code></a>（Docusaurus 会把 md 里的静态文件链接改写成带 hash 的路径，而那个地址 404，所以这里用原生 a 标签指向真实文件）
+Download: <a href="../probe.py" download><code>probe.py</code></a> (Docusaurus rewrites static-file links in md to hashed paths, and that address returns 404, so here we use a native a tag pointing at the real file)
 
 ```python
-"""示例 4：只看不说（观察者）。
+"""Example 4: look but say nothing (observer).
 
     PYTHONPATH=src python examples/probe.py
 
-发现与宣告是两个正交的层：
-  - 这个节点**扫描**目录，所以能看见别人；
-  - 但它**不宣告**自己（不写声明文件），所以别人看不见它。
-适合临时排查：看一眼网上现在有什么，不留下痕迹。
+Discovery and announcement are two orthogonal layers:
+  - this node **scans** the directory, so it can see others;
+  - but it **does not announce** itself (it writes no announcement file), so others cannot see it.
+Good for temporary troubleshooting: take a look at what is on the network now and leave no trace.
 """
 
 from __future__ import annotations
@@ -38,31 +38,31 @@ import time
 
 from msp import MSPNode, Preset
 
-# 想隔离演示环境就设 MSP_NODES_DIR（默认 ~/.msp/nodes）
+# Set MSP_NODES_DIR to isolate the demo environment (default ~/.msp/nodes)
 NODES_DIR = os.environ.get("MSP_NODES_DIR", "~/.msp/nodes")
 
 
 def main() -> None:
-    # OBSERVER 预设：只有发现，没有宣告
+    # OBSERVER preset: discovery only, no announcement
     node = MSPNode("probe", preset=Preset.OBSERVER, nodes_dir=NODES_DIR)
     node.start()
 
-    print("[probe] 只看不说：我能看见别人，别人看不见我")
+    print("[probe] look but say nothing: I can see others, others cannot see me")
     try:
         while True:
             peers = node.neighbors()
-            print(f"[probe] 邻居 {len(peers)} 个: {peers}")
+            print(f"[probe] {len(peers)} neighbours: {peers}")
             time.sleep(5)
     except KeyboardInterrupt:
         node.stop()
-        print("\n[probe] 已退出")
+        print("\n[probe] exited")
 
 
 if __name__ == "__main__":
     main()
 ```
 
-## 值得注意
+## Worth noting
 
-- 适合临时排查：看一眼现在有什么在跑，不留下痕迹。
-- 「只说」是另一半：`Preset` 里用只有 presence、没有 discovery 的组合即可，本示例不展开。
+- Good for temporary troubleshooting: see what is running now and leave no trace.
+- "Say only" is the other half: in `Preset` a combination with presence but no discovery is enough; this example does not go into it.

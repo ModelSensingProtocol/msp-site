@@ -359,3 +359,83 @@ body {
 
 .md-social { margin: 0.3rem 0; }
 .md-social__link { color: var(--md-default-fg-color--light); }
+
+/* ── 代码块：仿 MCP（近白底、12px 圆角、右上角图标组、底部滚动条）── */
+.md-typeset .highlight,
+.md-typeset pre {
+  position: relative;
+  background: #fdfdfc;
+  border: 1px solid var(--md-typeset-table-color);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .highlight,
+[data-md-color-scheme="slate"] .md-typeset pre {
+  background: #14110f;
+}
+
+.md-typeset .highlight > pre,
+.md-typeset pre > code {
+  margin: 0;
+  padding: 0.95rem 1.15rem;
+  background: transparent;
+  font-size: 0.74rem;
+  line-height: 1.75;
+}
+
+/* 底部滚动条做细一点，别喧宾夺主 */
+.md-typeset .highlight > pre::-webkit-scrollbar,
+.md-typeset pre > code::-webkit-scrollbar {
+  height: 6px;
+}
+
+.md-typeset .highlight > pre::-webkit-scrollbar-thumb,
+.md-typeset pre > code::-webkit-scrollbar-thumb {
+  background: var(--md-default-fg-color--lightest);
+  border-radius: 999px;
+}
+
+/* 复制按钮：右上角一个安静的图标（MCP 那一排在右上） */
+.md-clipboard {
+  top: 0.55rem;
+  right: 0.55rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--md-default-fg-color--lighter);
+  border-radius: 0.4rem;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.md-clipboard:hover,
+.md-clipboard:focus {
+  color: var(--md-default-fg-color);
+  background: var(--md-primary-fg-color--light);
+}
+
+.md-clipboard:after {
+  top: 0.42rem;
+  left: 0.42rem;
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+/* 代码块里的行内注释等：保持与 MCP 接近的对比度 */
+.md-typeset .highlight .c,
+.md-typeset .highlight .c1,
+.md-typeset .highlight .cm { color: #78716c; }
+
+/* logo：用 MSP 的网状标记，去掉 Material 默认的方框感 */
+.msp-logo {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: block;
+}
+
+.md-header__button.md-logo { margin: 0.2rem 0.35rem 0.2rem 0; padding: 0; }
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg { width: 1.75rem; height: 1.75rem; }
+
+/* 去掉 Material 在 .highlight 上可能叠加的内边距，避免代码块顶部发空 */
+.md-typeset .highlight { padding: 0; }
+.md-typeset .highlight > pre > code { display: block; }

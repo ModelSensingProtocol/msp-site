@@ -1,4 +1,4 @@
-site_name: MSP documentation
+site_name: MSP
 site_description: Model Sensing Protocol — a local-first mesh where every app is a neighbour.
 site_url: https://modelsensingprotocol.github.io/msp-site/docs/latest/
 docs_dir: docs

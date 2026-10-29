@@ -24,10 +24,10 @@
   <nav>
     <a href="#what">What is MSP</a>
     <a href="#enables">Capabilities</a>
+    <a href="#philosophy">Philosophy</a>
     <a href="#start">Start building</a>
     <a href="docs/latest/">Documentation</a>
     <a href="#ecosystem">Implementations</a>
-    <a href="docs/latest/">Docs</a>
     <a class="gh" href="https://github.com/ModelSensingProtocol/msp-site" target="_blank" rel="noreferrer">GitHub</a>
   </nav>
 </header>
@@ -139,6 +139,51 @@
         say so, and the agent decides whether to notify or stay quiet.</p>
       </div>
     </div>
+  </section>
+
+  <section id="philosophy" class="block">
+    <h2>Design philosophy</h2>
+    <p>
+      MSP is small because it makes six deliberate choices, and each one costs something we
+      accepted up front. Stated plainly, so you can disagree with them early.
+    </p>
+    <div class="grid three">
+      <div class="card">
+        <h3>Presence is observed, not configured</h3>
+        <p>A lease you can read beats a config file you must maintain. A node that stops renewing
+        simply disappears; nobody writes a cleanup script.</p>
+      </div>
+      <div class="card">
+        <h3>Changes are pushed, polling is the fallback</h3>
+        <p>An event belongs to the app that owns it, not to the model's next question. A subscriber
+        is woken instead of asked again. Nothing is retained, and we say so.</p>
+      </div>
+      <div class="card">
+        <h3>Peers, not a switchboard</h3>
+        <p>Two local apps can serve each other directly. The agent is one participant in the mesh,
+        not the hub every message has to cross.</p>
+      </div>
+      <div class="card">
+        <h3>Minimal core, extensible edges</h3>
+        <p>Eight fixed top-level fields and a four-byte length prefix. Transports, patterns and
+        authorisation are pluggable, so the protocol does not have to anticipate your use case.</p>
+      </div>
+      <div class="card">
+        <h3>One protocol at runtime</h3>
+        <p>MCP appears at import time — adapters wrap existing servers — but the running network
+        speaks one language. Two protocols in one process is where the state bugs live.</p>
+      </div>
+      <div class="card">
+        <h3>Say what is weak, out loud</h3>
+        <p>No retention, no gossip, trust equals reachability. A protocol that hides its edges gets
+        used where it does not fit, and then blamed for it.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:20px">
+      Everything is a node. Everything is a signal. Every layer is extensible — and the cost of
+      those three sentences is written down in
+      <a href="docs/latest/why-not-mcp/">the positioning document</a>.
+    </p>
   </section>
 
   <section id="start" class="block">

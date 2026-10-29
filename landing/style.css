@@ -343,3 +343,31 @@ body.docs { }
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; }
 }
+
+/* 三句话纲领：三等分，卡片略高于普通卡片 */
+.tenets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.tenets .card { padding: 22px 20px 20px; }
+
+.tenets .card h3 {
+  font-size: 17px;
+  letter-spacing: -0.015em;
+  margin-bottom: 10px;
+}
+
+.tenets .card h3::after {
+  content: "";
+  display: block;
+  width: 28px;
+  height: 2px;
+  margin-top: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.tenets .card p { font-size: 14px; line-height: 1.65; }

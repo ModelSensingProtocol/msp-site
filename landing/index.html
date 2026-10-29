@@ -144,44 +144,40 @@
   <section id="philosophy" class="block">
     <h2>Design philosophy</h2>
     <p>
-      MSP is small because it makes six deliberate choices, and each one costs something we
-      accepted up front. Stated plainly, so you can disagree with them early.
+      Three sentences. Everything else in the protocol is a consequence of them — and so is every
+      limitation we admit to.
     </p>
-    <div class="grid three">
+    <div class="tenets">
       <div class="card">
-        <h3>Presence is observed, not configured</h3>
-        <p>A lease you can read beats a config file you must maintain. A node that stops renewing
-        simply disappears; nobody writes a cleanup script.</p>
+        <h3>Everything is a node.</h3>
+        <p>
+          A downloader, an editor, an ESP32 with six tools, the agent itself — the same kind of
+          thing: a lease, a manifest, tools, signals. There is no privileged participant and no
+          broker to configure, so two applications can serve each other without asking the model
+          for permission.
+        </p>
       </div>
       <div class="card">
-        <h3>Changes are pushed, polling is the fallback</h3>
-        <p>An event belongs to the app that owns it, not to the model's next question. A subscriber
-        is woken instead of asked again. Nothing is retained, and we say so.</p>
+        <h3>Everything is a signal.</h3>
+        <p>
+          One packet shape carries tool calls, results, broadcasts and heartbeats alike. That is
+          why an event can be pushed instead of polled: nothing in the wire format privileges
+          "request". It is also why nothing is retained — a signal that nobody was listening for is
+          gone, and we say so instead of pretending otherwise.
+        </p>
       </div>
       <div class="card">
-        <h3>Peers, not a switchboard</h3>
-        <p>Two local apps can serve each other directly. The agent is one participant in the mesh,
-        not the hub every message has to cross.</p>
-      </div>
-      <div class="card">
-        <h3>Minimal core, extensible edges</h3>
-        <p>Eight fixed top-level fields and a four-byte length prefix. Transports, patterns and
-        authorisation are pluggable, so the protocol does not have to anticipate your use case.</p>
-      </div>
-      <div class="card">
-        <h3>One protocol at runtime</h3>
-        <p>MCP appears at import time — adapters wrap existing servers — but the running network
-        speaks one language. Two protocols in one process is where the state bugs live.</p>
-      </div>
-      <div class="card">
-        <h3>Say what is weak, out loud</h3>
-        <p>No retention, no gossip, trust equals reachability. A protocol that hides its edges gets
-        used where it does not fit, and then blamed for it.</p>
+        <h3>Every layer is extensible.</h3>
+        <p>
+          Eight fixed fields and a four-byte length prefix; discovery, presence, transports,
+          patterns and authorisation all plug in behind that. A small core is the only way a
+          protocol can survive use cases it did not anticipate — including yours.
+        </p>
       </div>
     </div>
-    <p class="muted" style="margin-top:20px">
-      Everything is a node. Everything is a signal. Every layer is extensible — and the cost of
-      those three sentences is written down in
+    <p class="muted" style="margin-top:22px">
+      What the three sentences cost: no retention, no gossip, and trust equal to reachability.
+      That is written down, not discovered later — see
       <a href="docs/latest/why-not-mcp/">the positioning document</a>.
     </p>
   </section>

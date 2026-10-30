@@ -51,7 +51,7 @@ cd docs-site && npm run build     # output: docs-site/build
 | `docs-site/i18n/zh/docusaurus-plugin-content-docs-*/` | Chinese translations, one tree per instance |
 | `docs-site/versioned_docs/version-2026-10-10/` | Frozen snapshot served at `/docs/` |
 | `landing/`, `landing/zh/` | The landing page, both languages |
-| `tools/` | `make_favicon.py`, `make_architecture.py`, `localize_landing.py` |
+| `tools/` | `make_favicon.py`, `localize_landing.py` |
 | `docs-site/tools/check_examples.py` | Runs the example nodes for real |
 
 Content is copied from the main repository (`docs/wiki/`, `docs/spec/`, `docs/DESIGN.md`). The main
@@ -124,16 +124,24 @@ Run it after editing the English page, or the two drift apart.
 
 ## Architecture diagram
 
-```bash
-pip install pillow
-python tools/make_architecture.py
+The diagram on the docs home and on *Core concepts* is a **Mermaid** flowchart written inline in
+the Markdown — not an image. Edit the ```` ```mermaid ```` block in
+`docs-site/docs/architecture.md` (and its siblings: the versioned copy, plus the two Chinese
+translations) to change it.
+
+```mermaid
+flowchart LR
+  A1["Agent"] <--> A2["Second agent"]
+  ED["Editor"] <--> DL["Downloader"]
 ```
 
-Writes `docs-site/static/img/architecture.png` and `architecture-zh.png`. Labels live in the
-`LABELS` table at the top of the script — edit there, not the pixels. The diagram follows the same
-visual language as the MCP architecture figure (columns of boxes, a protocol box in the middle,
-thin two-headed arrows) and adds the part MCP's figure cannot show: a small mesh inside the middle
-box, with one edge drawn green, meaning two nodes talk **without the model in between**.
+It is deliberately a **mesh, not a hub**: AI calls AI, tools call tools, a device calls an agent,
+and two dotted green edges carry signals. Node classes give the four kinds their colours — AI
+applications, tools, a device, and an observer that only emits signals.
+
+Mermaid needs `@docusaurus/theme-mermaid` plus the optional `@mermaid-js/layout-elk`; both are in
+`package.json`. Rendering happens client-side, so the diagram needs JavaScript — the surrounding
+prose does not.
 
 ## Favicon
 

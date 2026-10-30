@@ -1,26 +1,41 @@
 # 核心概念
 
-![MSP 架构：左侧是 AI 应用，右侧是软件与设备，都连到一个对等的 MSP 网，而不是总线](@site/static/img/architecture-zh.png)
+```mermaid
+flowchart LR
+  A1["Agent<br/><small>AI 应用</small>"]
+  A2["另一个 Agent<br/><small>AI 应用</small>"]
+  ED["编辑器<br/><small>工具 + 信号</small>"]
+  DL["下载器<br/><small>工具 + 信号</small>"]
+  W["天气<br/><small>纯工具</small>"]
+  ES["ESP32<br/><small>设备，纯工具</small>"]
+  OB["观察者<br/><small>只发信号</small>"]
 
-*每个参与者都是节点：应用发问，软件与设备回答，其中两个可以彼此直连、中间不经过模型。*
+  A1 <--> A2
+  ED <--> DL
+  W <--> ES
 
-五个概念，从上到下依次依赖。
+  A1 <--> ED
+  A2 <--> DL
+  ES <--> A2
+  DL <--> ED
 
+  ED -. 信号 .-> OB
+  DL -. 信号 .-> OB
+
+  classDef ai fill:#eff6ff,stroke:#2563eb,color:#1c1917
+  classDef tool fill:#ecfdf5,stroke:#2f9e6b,color:#1c1917
+  classDef dev fill:#fff7ed,stroke:#b45309,color:#1c1917
+  classDef obs fill:#f5f5f4,stroke:#78716c,color:#1c1917
+
+  class A1,A2 ai
+  class ED,DL,W tool
+  class ES dev
+  class OB obs
 ```
-                    ┌─────────────┐
-                    │   节点 node │  一个进程里的参与者，有唯一 id
-                    └──────┬──────┘
-            发现目录 + 租约 │            握手交换 manifest
-                    ┌──────┴──────┐
-        ┌───────────┴───┐   ┌─────┴─────────┐
-        │ 工具 tool      │   │ 信号 signal    │  能力清单里被宣告的两类东西
-        │ （请求-应答）   │   │ （广播，发完即忘）│
-        └───────────┬───┘   └─────┬─────────┘
-                    │             │
-              ┌─────┴─────────────┴─────┐
-              │ 连接 connection           │  节点之间一条 TCP 长连接
-              └──────────────────────────┘
-```
+
+*实线是调用（任意节点都能调任意节点），绿色虚线是信号。AI 连 AI、工具连工具、设备调 agent——
+没有哪条消息必须经过模型，也没有必须经过的中心。*
+
 
 ## 节点（node）
 

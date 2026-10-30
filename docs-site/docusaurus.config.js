@@ -20,6 +20,7 @@ module.exports = {
   baseUrl: "/msp-site/docs/",
   trailingSlash: true,
   onBrokenLinks: "warn",
+  markdown: { mermaid: true },
   onBrokenAnchors: "warn",
   favicon: "favicon.png",
 
@@ -31,6 +32,8 @@ module.exports = {
       zh: { label: "中文", htmlLang: "zh-CN" },
     },
   },
+
+  themes: ["@docusaurus/theme-mermaid"],
 
   presets: [
     [
@@ -104,6 +107,22 @@ module.exports = {
         },
       ],
       copyright: `Copyright © MSP — Model Sensing Protocol. MIT licensed. This site is documentation, not the specification; the normative text lives in the repository.`,
+    },
+    mermaid: {
+      options: {
+        theme: "base",
+        flowchart: { nodeSpacing: 42, rankSpacing: 64, padding: 8, useMaxWidth: true },
+        themeVariables: {
+          fontFamily: "Inter, -apple-system, Segoe UI, Microsoft YaHei, sans-serif",
+          fontSize: "15px",
+          primaryColor: "#ecfdf5",
+          primaryBorderColor: "#2f9e6b",
+          primaryTextColor: "#1c1917",
+          lineColor: "#a8a29e",
+          secondaryColor: "#eff6ff",
+          tertiaryColor: "#fff7ed",
+        },
+      },
     },
     prism: {
       theme: themes.github,

@@ -1,28 +1,42 @@
 # Core Concepts
 
-![MSP architecture: AI applications on the left, software and devices on the right, all connected
-to an MSP mesh that is peers rather than a hub](@site/static/img/architecture.png)
+```mermaid
+flowchart LR
+  A1["Agent<br/><small>AI application</small>"]
+  A2["Second agent<br/><small>AI application</small>"]
+  ED["Editor<br/><small>tool + signal</small>"]
+  DL["Downloader<br/><small>tool + signal</small>"]
+  W["Weather<br/><small>pure tool</small>"]
+  ES["ESP32<br/><small>device, pure tool</small>"]
+  OB["Watcher<br/><small>signal only</small>"]
 
-*Every participant is a node: applications ask, software and devices answer, and two of them can
-talk directly without the model in between.*
+  A1 <--> A2
+  ED <--> DL
+  W <--> ES
 
-Five concepts, each depending on the one below it.
+  A1 <--> ED
+  A2 <--> DL
+  ES <--> A2
+  DL <--> ED
 
+  ED -. signal .-> OB
+  DL -. signal .-> OB
+
+  classDef ai fill:#eff6ff,stroke:#2563eb,color:#1c1917
+  classDef tool fill:#ecfdf5,stroke:#2f9e6b,color:#1c1917
+  classDef dev fill:#fff7ed,stroke:#b45309,color:#1c1917
+  classDef obs fill:#f5f5f4,stroke:#78716c,color:#1c1917
+
+  class A1,A2 ai
+  class ED,DL,W tool
+  class ES dev
+  class OB obs
 ```
-                    ┌─────────────┐
-                    │    node     │  a participant inside a process, with a unique id
-                    └──────┬──────┘
-        discovery dir + lease │         handshake exchanges the manifest
-                    ┌──────┴──────┐
-        ┌───────────┴───┐   ┌─────┴─────────┐
-        │ tool          │   │ signal        │  the two kinds of thing announced in a manifest
-        │ (request/reply)│  │ (broadcast, fire-and-forget)│
-        └───────────┬───┘   └─────┬─────────┘
-                    │             │
-              ┌─────┴─────────────┴─────┐
-              │ connection              │  a long-lived TCP connection between nodes
-              └──────────────────────────┘
-```
+
+*Solid arrows are calls (any node may call any node); dotted green arrows are signals. AI talks to
+AI, tools talk to tools, a device calls an agent — nothing has to pass through a model, and there is
+no hub to go through.*
+
 
 ## Node
 

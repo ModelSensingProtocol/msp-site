@@ -271,3 +271,10 @@ body {
   .navbar__link { margin: 0 0.5rem; }
   .theme-doc-markdown h1 { font-size: 1.7rem; }
 }
+
+/* Mermaid 图居中：默认贴左，读起来像漏排 */
+.docusaurus-mermaid-container {
+  display: flex;
+  justify-content: center;
+  margin: 1.2rem 0;
+}

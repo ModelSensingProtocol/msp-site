@@ -8,15 +8,16 @@ flowchart LR
   DL["Downloader<br/><small>tool + signal</small>"]
   W["Weather<br/><small>pure tool</small>"]
   ES["ESP32<br/><small>device, pure tool</small>"]
-  OB["Watcher<br/><small>signal only</small>"]
+  OB["Watcher<br/><small>subscriber only</small>"]
 
+  A1 <--> A2
   A1 --> ED
   A1 --> W
   A2 --> DL
   A2 --> ES
-  A2 --> A1
   DL --> ED
 
+  DL -. signal .-> A1
   ED -. signal .-> OB
   ES -. signal .-> OB
 
@@ -31,10 +32,11 @@ flowchart LR
   class OB obs
 ```
 
-*An arrow means a call: the tail is the caller, the head is the node being called. So an agent calls
-an editor, a pure tool or a device; one agent calls another; and a downloader hands a finished file
-straight to an editor. Dotted green arrows are signals — the editor and the ESP32 broadcast, the
-observer only listens. Nothing goes through a model, and there is no hub.*
+*A solid arrow is a call: the tail is the caller. Two agents call each other in both directions; an
+agent calls an editor, a pure tool or a device; a downloader hands a finished file straight to an
+editor. Dotted green arrows are signals — the downloader pushes progress to an agent, while the
+editor and the ESP32 broadcast and a subscriber-only node listens. Nothing goes through a model, and
+there is no hub.*
 
 Model Sensing Protocol lets processes on a machine — or across a LAN — discover each other, call
 each other's tools, and broadcast events. A node announces itself with a **lease**, so "what is

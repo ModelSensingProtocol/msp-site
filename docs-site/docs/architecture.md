@@ -17,7 +17,7 @@ flowchart LR
   A2 --> ES
   DL --> ED
 
-  DL -. signal .-> A1
+  DL -. signal .-> A2
   ED -. signal .-> OB
   ES -. signal .-> OB
 
@@ -34,8 +34,8 @@ flowchart LR
 
 *A solid arrow is a call: the tail is the caller. Two agents call each other in both directions; an
 agent calls an editor, a pure tool or a device; a downloader hands a finished file straight to an
-editor. Dotted green arrows are signals — the downloader pushes progress to an agent, while the
-editor and the ESP32 broadcast and a subscriber-only node listens. Nothing goes through a model, and
+editor. Dotted green arrows are signals — the downloader pushes progress back to the very agent
+that called it, while the editor and the ESP32 broadcast and a subscriber-only node listens. Nothing goes through a model, and
 there is no hub.*
 
 

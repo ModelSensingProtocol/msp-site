@@ -1,13 +1,64 @@
 {
   "main": [
-    "index",
-    "intro",
-    "architecture",
-    "why-not-mcp",
-    "provide-tools",
-    "consume",
-    "faq",
-    "glossary",
+    {
+      "type": "category",
+      "label": "Getting started",
+      "collapsed": false,
+      "items": [
+        "index",
+        "intro"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Learn",
+      "collapsed": false,
+      "items": [
+        "architecture",
+        "roles",
+        "leases",
+        "signals",
+        "versioning"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Guides",
+      "collapsed": false,
+      "items": [
+        "provide-tools",
+        "consume",
+        "tasks",
+        "debugging",
+        "testing"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Operations",
+      "items": [
+        "lan",
+        "security"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Going further",
+      "items": [
+        "multi-round",
+        "topology",
+        "performance"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Reference",
+      "items": [
+        "faq",
+        "glossary",
+        "why-not-mcp"
+      ]
+    },
     {
       "type": "category",
       "label": "Examples",

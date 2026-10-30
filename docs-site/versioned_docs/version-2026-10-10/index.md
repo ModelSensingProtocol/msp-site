@@ -47,15 +47,35 @@ design lives in the positioning document.
 
 ## Start here
 
+New to MSP? Read these three, in order — about fifteen minutes total.
+
 | Page | What it answers |
 |---|---|
-| [Introduction](intro.md) | install, run two nodes, call across them — five minutes |
-| [Architecture & concepts](architecture.md) | node, preset, tool, signal, lease, connection |
-| [Why MSP, not MCP](why-not-mcp.md) | what the two protocols actually differ on, including costs |
-| [Provide tools and signals](provide-tools.md) | expose capabilities, publish events, task patterns |
-| [Discover, call, subscribe](consume.md) | discovery vs connection, error semantics, subscriptions |
-| [FAQ & troubleshooting](faq.md) | symptom → cause table, and how to narrow it down |
-| [Glossary](glossary.md) | terms, one line each, with where they live in the source |
+| [Introduction](intro.md) | install, run two nodes, call across them |
+| [Core concepts](architecture.md) | node, preset, tool, signal, lease, connection |
+| [Node roles](roles.md) | should my app be a provider, a consumer, or both? |
+
+## Find what you need
+
+**Learn how it works** — [leases and discovery](leases.md) (how presence works, and the 60 s
+disappearance bound) · [signals](signals.md) (push, and what it costs) ·
+[versioning](versioning.md) (protocol revisions vs schema vs package version)
+
+**Build something** — [provide tools and signals](provide-tools.md) ·
+[discover, call, subscribe](consume.md) · [long tasks](tasks.md) (a call that returns a handle
+instead of blocking) · [testing a node](testing.md)
+
+**Run it** — [debugging](debugging.md) (what the counters mean) ·
+[across machines](lan.md) · [security and trust](security.md) (read this before binding to `0.0.0.0`)
+
+**Go deeper** — [multi-round](multi-round.md) · [topology and what you cannot see](topology.md) ·
+[performance and costs](performance.md) · [the specification](pathname:///msp-site/docs/spec/)
+
+**Reference** — [FAQ and troubleshooting](faq.md) · [glossary](glossary.md) ·
+[why MSP, not MCP](why-not-mcp.md)
+
+**Run the examples** — [four nodes you can start right now](examples/index.md): a pure tool, a long
+task, a subscriber that receives a file, and an observer.
 
 ## Two things worth knowing before you write code
 

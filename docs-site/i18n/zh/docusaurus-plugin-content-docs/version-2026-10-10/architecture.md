@@ -8,19 +8,17 @@ flowchart LR
   DL["下载器<br/><small>工具 + 信号</small>"]
   W["天气<br/><small>纯工具</small>"]
   ES["ESP32<br/><small>设备，纯工具</small>"]
-  OB["观察者<br/><small>只发信号</small>"]
+  OB["观察者<br/><small>只收信号</small>"]
 
-  A1 <--> A2
-  ED <--> DL
-  W <--> ES
-
-  A1 <--> ED
-  A2 <--> DL
-  ES <--> A2
-  DL <--> ED
+  A1 --> ED
+  A1 --> W
+  A2 --> DL
+  A2 --> ES
+  A2 --> A1
+  DL --> ED
 
   ED -. 信号 .-> OB
-  DL -. 信号 .-> OB
+  ES -. 信号 .-> OB
 
   classDef ai fill:#eff6ff,stroke:#2563eb,color:#1c1917
   classDef tool fill:#ecfdf5,stroke:#2f9e6b,color:#1c1917
@@ -33,8 +31,10 @@ flowchart LR
   class OB obs
 ```
 
-*实线是调用（任意节点都能调任意节点），绿色虚线是信号。AI 连 AI、工具连工具、设备调 agent——
-没有哪条消息必须经过模型，也没有必须经过的中心。*
+*箭头表示调用：尾巴是调用方，头是被调的节点。所以 agent 会调编辑器、纯工具或设备；
+一个 agent 也会调另一个 agent；下载器把完成的文件直接交给编辑器。
+绿色虚线是信号——编辑器与 ESP32 主动广播，观察者只收不发。
+没有哪条消息经过模型，也没有中心。*
 
 
 ## 节点（node）

@@ -10,17 +10,15 @@ flowchart LR
   ES["ESP32<br/><small>device, pure tool</small>"]
   OB["Watcher<br/><small>signal only</small>"]
 
-  A1 <--> A2
-  ED <--> DL
-  W <--> ES
-
-  A1 <--> ED
-  A2 <--> DL
-  ES <--> A2
-  DL <--> ED
+  A1 --> ED
+  A1 --> W
+  A2 --> DL
+  A2 --> ES
+  A2 --> A1
+  DL --> ED
 
   ED -. signal .-> OB
-  DL -. signal .-> OB
+  ES -. signal .-> OB
 
   classDef ai fill:#eff6ff,stroke:#2563eb,color:#1c1917
   classDef tool fill:#ecfdf5,stroke:#2f9e6b,color:#1c1917
@@ -33,9 +31,10 @@ flowchart LR
   class OB obs
 ```
 
-*Solid arrows are calls (any node may call any node); dotted green arrows are signals. AI talks to
-AI, tools talk to tools, a device calls an agent — nothing has to pass through a model, and there is
-no hub to go through.*
+*An arrow means a call: the tail is the caller, the head is the node being called. So an agent calls
+an editor, a pure tool or a device; one agent calls another; and a downloader hands a finished file
+straight to an editor. Dotted green arrows are signals — the editor and the ESP32 broadcast, the
+observer only listens. Nothing goes through a model, and there is no hub.*
 
 
 ## Node

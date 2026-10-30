@@ -36,6 +36,10 @@ if __name__ == "__main__":
 `@node.tool` does more than register a function: it **declares the tool in the node's capability
 manifest**, so a neighbour sees it during the handshake.
 
+A tool is not a special RPC — it is the same eight-field frame as everything else, with
+`type: "tool_call"`. If you want to know what actually travels, read
+**[One frame, every job](library/signal-and-path.md)**.
+
 ## 3. The side that uses it
 
 Save as `agent.py`, run one in each terminal:
@@ -53,6 +57,10 @@ print("result:", result.unwrap() if not result.is_error else result.error)
 ```
 
 Within two seconds you should see `neighbours: ['weather']` and a JSON payload.
+
+`node.neighbors()` is the coarse view. Once connected, `node.peer("weather")` gives you an object with
+its tools, signals and patterns — and `peer.t.get_weather(...)` calls it directly. That view is
+documented in **[Peer view](library/peer-view.md)**.
 
 ## 4. How they found each other
 
@@ -80,6 +88,10 @@ announcing (observe only), or announce without scanning (be listed without diall
 
 Pass `nodes_dir=` to use another directory. Two nodes using different directories simply cannot
 see each other.
+
+Which decisions are yours and which are the protocol's is the subject of
+**[Node and preset](library/node-and-preset.md)**: discovery, presence and connect policy are local
+settings that never travel on the wire.
 
 ## 5. Next
 

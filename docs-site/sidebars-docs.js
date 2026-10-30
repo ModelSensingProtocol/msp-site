@@ -1,9 +1,14 @@
 /**
  * Sidebars for the Documentation instance.
  *
- * Structured the way MCP organises its docs: a beginner path first (Getting started → Learn →
- * Guides), then operations / going further / reference, with examples as their own group.
- * The group order is the reading order.
+ * Two passes over the same material, in reading order:
+ *
+ *   Getting started  — 跑起来（index, intro）
+ *   The library      — 库自己的概念，严格按依赖链排：报文 → 节点与 preset → peer 视图
+ *   Learn / Guides   — 机制与任务
+ *   Operations / Going further / Reference / Examples
+ *
+ * 每页只引入一个新概念，并且只用前面已经解释过的概念——所以顺序不能随意调换。
  */
 module.exports = {
   main: [
@@ -12,6 +17,12 @@ module.exports = {
       label: 'Getting started',
       collapsed: false,
       items: ['index', 'intro'],
+    },
+    {
+      type: 'category',
+      label: 'The library',
+      collapsed: false,
+      items: ['library/signal-and-path', 'library/node-and-preset', 'library/peer-view'],
     },
     {
       type: 'category',

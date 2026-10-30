@@ -57,6 +57,10 @@ New to MSP? Read these three, in order — about fifteen minutes total.
 
 ## Find what you need
 
+**The library itself** — [one frame, every job](library/signal-and-path.md) (the eight fields and what
+`path` does) · [node and preset](library/node-and-preset.md) (policy you compose, never sent) ·
+[peer view](library/peer-view.md) (what you see of another node, and how to call it)
+
 **Learn how it works** — [leases and discovery](leases.md) (how presence works, and the 60 s
 disappearance bound) · [signals](signals.md) (push, and what it costs) ·
 [versioning](versioning.md) (protocol revisions vs schema vs package version)

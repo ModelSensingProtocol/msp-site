@@ -11,6 +11,16 @@
     },
     {
       "type": "category",
+      "label": "The library",
+      "collapsed": false,
+      "items": [
+        "library/signal-and-path",
+        "library/node-and-preset",
+        "library/peer-view"
+      ]
+    },
+    {
+      "type": "category",
       "label": "Learn",
       "collapsed": false,
       "items": [

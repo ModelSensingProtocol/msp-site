@@ -51,7 +51,7 @@ cd docs-site && npm run build     # output: docs-site/build
 | `docs-site/i18n/zh/docusaurus-plugin-content-docs-*/` | Chinese translations, one tree per instance |
 | `docs-site/versioned_docs/version-2026-10-10/` | Frozen snapshot served at `/docs/` |
 | `landing/`, `landing/zh/` | The landing page, both languages |
-| `tools/` | `make_favicon.py`, `localize_landing.py` |
+| `tools/` | `make_favicon.py`, `make_architecture.py`, `localize_landing.py` |
 | `docs-site/tools/check_examples.py` | Runs the example nodes for real |
 
 Content is copied from the main repository (`docs/wiki/`, `docs/spec/`, `docs/DESIGN.md`). The main
@@ -121,6 +121,19 @@ python tools/localize_landing.py
 ```
 
 Run it after editing the English page, or the two drift apart.
+
+## Architecture diagram
+
+```bash
+pip install pillow
+python tools/make_architecture.py
+```
+
+Writes `docs-site/static/img/architecture.png` and `architecture-zh.png`. Labels live in the
+`LABELS` table at the top of the script — edit there, not the pixels. The diagram follows the same
+visual language as the MCP architecture figure (columns of boxes, a protocol box in the middle,
+thin two-headed arrows) and adds the part MCP's figure cannot show: a small mesh inside the middle
+box, with one edge drawn green, meaning two nodes talk **without the model in between**.
 
 ## Favicon
 

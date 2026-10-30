@@ -1,5 +1,11 @@
 # Core Concepts
 
+![MSP architecture: AI applications on the left, software and devices on the right, all connected
+to an MSP mesh that is peers rather than a hub](@site/static/img/architecture.png)
+
+*Every participant is a node: applications ask, software and devices answer, and two of them can
+talk directly without the model in between.*
+
 Five concepts, each depending on the one below it.
 
 ```

@@ -1,5 +1,11 @@
 # MSP documentation
 
+![MSP architecture: AI applications on the left, software and devices on the right, all connected
+to an MSP mesh that is peers rather than a hub](@site/static/img/architecture.png)
+
+*Every participant is a node: applications ask, software and devices answer, and two of them can
+talk directly without the model in between.*
+
 Model Sensing Protocol lets processes on a machine — or across a LAN — discover each other, call
 each other's tools, and broadcast events. A node announces itself with a **lease**, so "what is
 running right now" is something you read rather than something you configure.

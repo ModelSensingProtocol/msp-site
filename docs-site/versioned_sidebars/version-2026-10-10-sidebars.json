@@ -38,6 +38,7 @@
       "items": [
         "provide-tools",
         "consume",
+        "proactive-events",
         "tasks",
         "debugging",
         "testing"

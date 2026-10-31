@@ -71,6 +71,7 @@ grant it a path pattern. Local (loopback/UDS) peers are allow-listed automatical
 
 ## See also
 
+- [Proactive events: pushing without a webhook](proactive-events.md) — the same shape, end to end and runnable
 - [Provide tools and signals](provide-tools.md) — declaring and publishing
 - [Discover, call, subscribe](consume.md) — subscribing from the consumer side
 - [Topology and what you cannot see](topology.md) — why "who is connected to whom" needs evidence

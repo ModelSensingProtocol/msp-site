@@ -34,7 +34,7 @@ module.exports = {
       type: 'category',
       label: 'Guides',
       collapsed: false,
-      items: ['provide-tools', 'consume', 'tasks', 'debugging', 'testing'],
+      items: ['provide-tools', 'consume', 'proactive-events', 'tasks', 'debugging', 'testing'],
     },
     {
       type: 'category',

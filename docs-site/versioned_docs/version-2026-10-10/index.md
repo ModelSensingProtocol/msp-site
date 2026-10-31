@@ -65,7 +65,7 @@ New to MSP? Read these three, in order — about fifteen minutes total.
 disappearance bound) · [signals](signals.md) (push, and what it costs) ·
 [versioning](versioning.md) (protocol revisions vs schema vs package version)
 
-**Build something** — [provide tools and signals](provide-tools.md) ·
+**Build something** — [provide tools and signals](provide-tools.md) · [proactive events](proactive-events.md) (a file watcher pushes, an agent is woken) ·
 [discover, call, subscribe](consume.md) · [long tasks](tasks.md) (a call that returns a handle
 instead of blocking) · [testing a node](testing.md)
 
